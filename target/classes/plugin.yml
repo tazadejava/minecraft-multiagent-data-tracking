@@ -1,0 +1,11 @@
+name: ActionTracker
+version: 1.0
+main: me.tazadejava.actiontracker.ActionTracker
+commands:
+  mission:
+    description: Main command to handle mission data tracking requests.
+    permission: oponly
+permissions:
+  oponly:
+    description: Allows usage of mission command.
+    default: op
