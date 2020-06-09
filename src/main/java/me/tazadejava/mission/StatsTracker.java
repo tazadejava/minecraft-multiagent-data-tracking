@@ -4,16 +4,21 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import org.bukkit.Bukkit;
+import org.bukkit.Chunk;
+import org.bukkit.FluidCollisionMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Statistic;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.EntityType;
+import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.util.RayTraceResult;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -23,6 +28,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Predicate;
 
 public class StatsTracker {
 
@@ -250,20 +256,139 @@ public class StatsTracker {
     }
 
     private void addLineOfSight(HashMap<String, Object> values, Player p) {
-        List<Block> lineOfSightBlocks = p.getLineOfSight(new HashSet<>(Arrays.asList(Material.AIR, Material.CAVE_AIR, Material.VOID_AIR)), 50);
+        Predicate<Entity> noPlayerPredicate = new Predicate<Entity>() {
+            @Override
+            public boolean test(Entity entity) {
+                return !entity.equals(p);
+            }
+        };
 
-        if(!lineOfSightBlocks.isEmpty()) {
-            Bukkit.broadcastMessage(lineOfSightBlocks.get(0).getType().toString());
+        RayTraceResult rayTrace = p.getWorld().rayTrace(p.getEyeLocation(), p.getEyeLocation().getDirection(), 50, FluidCollisionMode.SOURCE_ONLY, true, 1, noPlayerPredicate);
+
+        if(rayTrace == null) {
+            values.put("LineOfSight", "");
+        } else {
+            JsonObject rayHitDetails = new JsonObject();
+
+            double distance = rayTrace.getHitPosition().distance(p.getLocation().toVector());
+
+            if(rayTrace.getHitEntity() != null) {
+                Entity ent = rayTrace.getHitEntity();
+                Location entLoc = ent.getLocation();
+                rayHitDetails.addProperty("x", entLoc.getX());
+                rayHitDetails.addProperty("y", entLoc.getY());
+                rayHitDetails.addProperty("z", entLoc.getZ());
+                rayHitDetails.addProperty("yaw", entLoc.getYaw());
+                rayHitDetails.addProperty("pitch", entLoc.getPitch());
+
+                if(ent.getType() == EntityType.DROPPED_ITEM) {
+                    Item item = (Item) ent;
+                    ItemStack itemStack = item.getItemStack();
+
+                    rayHitDetails.addProperty("stackSize", itemStack.getAmount());
+                    rayHitDetails.addProperty("hitType", "item");
+                } else {
+                    rayHitDetails.addProperty("hitType", "entity");
+                }
+
+                rayHitDetails.addProperty("type", ent.getType().toString().toLowerCase());
+                rayHitDetails.addProperty("inRange", distance <= 2.5);
+                rayHitDetails.addProperty("distance", distance);
+
+                Bukkit.broadcastMessage(rayTrace.getHitEntity().getType().toString() + " " + distance);
+            } else {
+                rayHitDetails.addProperty("hitType", "block");
+                rayHitDetails.addProperty("x", rayTrace.getHitPosition().getX());
+                rayHitDetails.addProperty("y", rayTrace.getHitPosition().getY());
+                rayHitDetails.addProperty("z", rayTrace.getHitPosition().getZ());
+                rayHitDetails.addProperty("type", rayTrace.getHitBlock().getType().toString().toLowerCase());
+                rayHitDetails.addProperty("inRange", distance <= 4.5); //this range is only valid for multiplayer
+                rayHitDetails.addProperty("distance", distance);
+
+                Bukkit.broadcastMessage(rayTrace.getHitBlock().getType().toString() + " " + distance);
+            }
+
+            values.put("LineOfSight", rayHitDetails);
         }
+    }
 
-//        for(Entity ent : p.getWorld().getEntities()) {
-//            if(p.hasLineOfSight(ent)) {
-//                Bukkit.broadcastMessage("" + ent + " " + ent.getType());
+//    private void addLineOfSight(HashMap<String, Object> values, Player p) {
+//        RayTraceResult blockRayTrace = p.getWorld().rayTraceBlocks(p.getEyeLocation(), p.getEyeLocation().getDirection(), 50, FluidCollisionMode.SOURCE_ONLY, true);
+//        RayTraceResult entityRayTrace = rayTraceEntity(p);
+//
+//        if(blockRayTrace == null && entityRayTrace == null) {
+//            values.put("LineOfSight", "");
+//        } else {
+//            JsonObject rayHitDetails = new JsonObject();
+//
+//            if(entityRayTrace != null) {
+//                double distance = entityRayTrace.getHitPosition().distance(p.getEyeLocation().toVector());
+//
+//                Entity ent = entityRayTrace.getHitEntity();
+//                Location entLoc = ent.getLocation();
+//                rayHitDetails.addProperty("x", entLoc.getX());
+//                rayHitDetails.addProperty("y", entLoc.getY());
+//                rayHitDetails.addProperty("z", entLoc.getZ());
+//                rayHitDetails.addProperty("yaw", entLoc.getYaw());
+//                rayHitDetails.addProperty("pitch", entLoc.getPitch());
+//
+//                if(ent.getType() == EntityType.DROPPED_ITEM) {
+//                    Item item = (Item) ent;
+//                    ItemStack itemStack = item.getItemStack();
+//
+//                    rayHitDetails.addProperty("stackSize", itemStack.getAmount());
+//                    rayHitDetails.addProperty("hitType", "item");
+//                } else {
+//                    rayHitDetails.addProperty("hitType", "entity");
+//                }
+//
+//                rayHitDetails.addProperty("type", ent.getType().toString().toLowerCase());
+//                rayHitDetails.addProperty("inRange", distance <= 3);
+//                rayHitDetails.addProperty("distance", distance);
+//
+//                Bukkit.broadcastMessage(entityRayTrace.getHitEntity().getType().toString() + " " + distance);
+//            } else {
+//                double distance = blockRayTrace.getHitPosition().distance(p.getEyeLocation().toVector());
+//
+//                rayHitDetails.addProperty("hitType", "block");
+//                rayHitDetails.addProperty("x", blockRayTrace.getHitPosition().getX());
+//                rayHitDetails.addProperty("y", blockRayTrace.getHitPosition().getY());
+//                rayHitDetails.addProperty("z", blockRayTrace.getHitPosition().getZ());
+//                rayHitDetails.addProperty("type", blockRayTrace.getHitBlock().getType().toString().toLowerCase());
+//                rayHitDetails.addProperty("inRange", distance <= 4.5); //this range is only valid for multiplayer
+//                rayHitDetails.addProperty("distance", distance);
+//
+//                Bukkit.broadcastMessage(blockRayTrace.getHitBlock().getType().toString() + " " + distance);
+//            }
+//
+//            values.put("LineOfSight", rayHitDetails);
+//        }
+//    }
+
+    //allows async retrieval of entities around the player, 32-40 blocks away
+//    private RayTraceResult rayTraceEntity(Player p) {
+////        RayTraceResult rayTrace = new RayTraceResult();
+//        Location loc = p.getEyeLocation();
+//        List<Entity> entities = new ArrayList<>();
+//        for(int dx = -2; dx <= 2; dx++) {
+//            for(int dz = -2; dz <= 2; dz++) {
+//                Chunk chunk = p.getWorld().getChunkAt(loc.getBlockX() + (dx * 16), loc.getBlockZ() + (dz * 16));
+//                if(!chunk.isLoaded()) {
+//                    continue;
+//                }
+//
+//                for(Entity ent : chunk.getEntities()) {
+//                    if(ent != p) {
+//                        entities.add(ent);
+//                    }
+//                }
 //            }
 //        }
-
-        values.put("LineOfSight", "");
-    }
+//
+//
+//
+//        return null;
+//    }
 
     private void addHotbarItems(HashMap<String, Object> values, Player p) {
         PlayerInventory inv = p.getInventory();
@@ -291,5 +416,9 @@ public class StatsTracker {
             }
         }
         values.put("nearby", nearbyBlocksJson);
+    }
+
+    public List<Player> getPlayerList() {
+        return playerList;
     }
 }

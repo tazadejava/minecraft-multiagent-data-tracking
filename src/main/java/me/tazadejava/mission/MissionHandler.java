@@ -3,7 +3,12 @@ package me.tazadejava.mission;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
+import org.bukkit.Bukkit;
+import org.bukkit.boss.BarColor;
+import org.bukkit.boss.BarStyle;
+import org.bukkit.boss.BossBar;
 import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 
@@ -58,6 +63,12 @@ public class MissionHandler {
         statsTracker = new StatsTracker(plugin, listener, jsonLog);
         statsTracker.startTracking();
 
+        BossBar countdown = Bukkit.createBossBar("Time left: " + duration + " second" + (duration == 1 ? "" : "s"), BarColor.BLUE, BarStyle.SEGMENTED_10);
+
+        for(Player p : statsTracker.getPlayerList()) {
+            countdown.addPlayer(p);
+        }
+
         new BukkitRunnable() {
 
             int count = 0;
@@ -67,12 +78,24 @@ public class MissionHandler {
                 statsTracker.appendCurrentStatsToLog();
 
                 count++;
+                if(count % 20 == 0) {
+                    int secondsLeft = (duration - (count / 20));
+                    countdown.setTitle("Time left: " + secondsLeft + " second" + (secondsLeft == 1 ? "" : "s"));
+                    double progress = (double) secondsLeft / duration;
+                    countdown.setProgress(progress);
+
+                    if(progress <= .2 && countdown.getColor() == BarColor.BLUE) {
+                        countdown.setColor(BarColor.RED);
+                    }
+                }
                 if(count >= 20 * duration) {
+                    countdown.removeAll();
+
                     endMission();
                     cancel();
                 }
             }
-        }.runTaskTimerAsynchronously(plugin, 0, 1L);
+        }.runTaskTimer(plugin, 0, 1L);
 
         return true;
     }
