@@ -1,3 +1,10 @@
-C:\Users\Tonit\Documents\MIT\UROP\ActionTrackerPlugin\src\main\java\me\tazadejava\actiontracker\MissionCommandHandler.java
-C:\Users\Tonit\Documents\MIT\UROP\ActionTrackerPlugin\src\main\java\me\tazadejava\actiontracker\EventListener.java
-C:\Users\Tonit\Documents\MIT\UROP\ActionTrackerPlugin\src\main\java\me\tazadejava\actiontracker\ActionTracker.java
+C:\Users\Tonit\Documents\MIT\UROP\ActionTrackerPlugin\src\main\java\me\tazadejava\mission\MissionEventListener.java
+C:\Users\Tonit\Documents\MIT\UROP\ActionTrackerPlugin\src\main\java\me\tazadejava\mission\Mission.java
+C:\Users\Tonit\Documents\MIT\UROP\ActionTrackerPlugin\src\main\java\me\tazadejava\actiontracker\ActionTrackerPlugin.java
+C:\Users\Tonit\Documents\MIT\UROP\ActionTrackerPlugin\src\main\java\me\tazadejava\mission\StreamlinedStatsTracker.java
+C:\Users\Tonit\Documents\MIT\UROP\ActionTrackerPlugin\src\main\java\me\tazadejava\mission\MissionCommandHandler.java
+C:\Users\Tonit\Documents\MIT\UROP\ActionTrackerPlugin\src\main\java\me\tazadejava\actiontracker\Utils.java
+C:\Users\Tonit\Documents\MIT\UROP\ActionTrackerPlugin\src\main\java\me\tazadejava\mission\MalmoStatsTracker.java
+C:\Users\Tonit\Documents\MIT\UROP\ActionTrackerPlugin\src\main\java\me\tazadejava\analyzer\PlayerAnalyzer.java
+C:\Users\Tonit\Documents\MIT\UROP\ActionTrackerPlugin\src\main\java\me\tazadejava\mission\StatsTracker.java
+C:\Users\Tonit\Documents\MIT\UROP\ActionTrackerPlugin\src\main\java\me\tazadejava\mission\MissionHandler.java
