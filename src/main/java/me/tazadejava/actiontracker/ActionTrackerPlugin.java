@@ -28,7 +28,7 @@ public class ActionTrackerPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new SpecialItemEventListener(specialItems.values()), this);
 
         MissionCommandHandler commandHandler;
-        getCommand("mission").setExecutor(commandHandler = new MissionCommandHandler(missionHandler, specialItems));
+        getCommand("mission").setExecutor(commandHandler = new MissionCommandHandler(this, missionHandler, specialItems));
         getCommand("mission").setTabCompleter(commandHandler);
     }
 

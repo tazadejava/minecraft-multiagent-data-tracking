@@ -3,6 +3,7 @@ package me.tazadejava.mission;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import org.bukkit.Bukkit;
 import org.bukkit.FluidCollisionMode;
 import org.bukkit.Location;
 import org.bukkit.Statistic;
@@ -35,8 +36,9 @@ public class MalmoStatsTracker implements StatsTracker {
         public Statistic[] trackedStats;
         public int[] lastPlayerStats;
         public HashMap<String, Object> lastPlayerValues;
-        public int lastPlayerDoorsOpened;
+        public int lastPlayerDoorsOpened, lastPlayerFiresExtinguished;
         public HashMap<String, Integer> lastPlayerBlocksBroken;
+        public List<Location> lastPlayerBlocksBrokenLocations;
 
         public LastStatsSnapshot(MalmoStatsTracker tracker, Player player) {
             this.trackedStats = tracker.trackedStats;
@@ -50,9 +52,63 @@ public class MalmoStatsTracker implements StatsTracker {
             if(tracker.lastPlayerDoorsOpened.containsKey(player)) {
                 this.lastPlayerDoorsOpened = tracker.lastPlayerDoorsOpened.get(player);
             }
+            if(tracker.lastPlayerFiresExtinguished.containsKey(player)) {
+                this.lastPlayerFiresExtinguished = tracker.lastPlayerFiresExtinguished.get(player);
+            }
             if(tracker.lastPlayerBlocksBroken.containsKey(player)) {
                 this.lastPlayerBlocksBroken = tracker.lastPlayerBlocksBroken.get(player);
             }
+            if(tracker.lastPlayerBlocksBrokenLocations.containsKey(player)) {
+                this.lastPlayerBlocksBrokenLocations = tracker.lastPlayerBlocksBrokenLocations.get(player);
+            }
+        }
+
+        private LastStatsSnapshot() {}
+
+        public LastStatsSnapshot calculateDeltaSnapshot(LastStatsSnapshot lastStats) {
+            LastStatsSnapshot deltaStats = new LastStatsSnapshot();
+
+            deltaStats.trackedStats = trackedStats;
+
+            deltaStats.lastPlayerStats = new int[lastPlayerStats.length];
+            for(int i = 0; i < lastPlayerStats.length; i++) {
+                deltaStats.lastPlayerStats[i] = lastPlayerStats[i] - lastStats.lastPlayerStats[i];
+            }
+
+            deltaStats.lastPlayerValues = new HashMap<>();
+            for(Map.Entry<String, Object> entry : lastPlayerValues.entrySet()) {
+                if(!lastStats.lastPlayerValues.containsKey(entry.getKey())) {
+                    deltaStats.lastPlayerValues.put(entry.getKey(), entry.getValue());
+                } else {
+                    if(!lastStats.lastPlayerValues.get(entry.getKey()).equals(entry.getValue())) {
+                        deltaStats.lastPlayerValues.put(entry.getKey(), entry.getValue());
+                    }
+                }
+            }
+
+            deltaStats.lastPlayerDoorsOpened = lastPlayerDoorsOpened - lastStats.lastPlayerDoorsOpened;
+            deltaStats.lastPlayerFiresExtinguished = lastPlayerFiresExtinguished - lastStats.lastPlayerFiresExtinguished;
+
+            deltaStats.lastPlayerBlocksBroken = new HashMap<>();
+            for(Map.Entry<String, Integer> entry : lastPlayerBlocksBroken.entrySet()) {
+                if(!lastStats.lastPlayerBlocksBroken.containsKey(entry.getKey())) {
+                    deltaStats.lastPlayerBlocksBroken.put(entry.getKey(), entry.getValue());
+                } else {
+                    int delta = entry.getValue() - lastStats.lastPlayerBlocksBroken.get(entry.getKey());
+                    if(delta > 0) {
+                        deltaStats.lastPlayerBlocksBroken.put(entry.getKey(), delta);
+                    }
+                }
+            }
+
+            deltaStats.lastPlayerBlocksBrokenLocations = new ArrayList<>();
+            if(lastPlayerBlocksBrokenLocations.size() > lastStats.lastPlayerBlocksBrokenLocations.size()) {
+                for(int i = lastStats.lastPlayerBlocksBrokenLocations.size(); i < lastPlayerBlocksBrokenLocations.size(); i++) {
+                    deltaStats.lastPlayerBlocksBrokenLocations.add(lastPlayerBlocksBrokenLocations.get(i));
+                }
+            }
+
+            return deltaStats;
         }
     }
 
@@ -68,8 +124,9 @@ public class MalmoStatsTracker implements StatsTracker {
     private HashMap<Player, HashMap<String, Object>> lastPlayerValues;
 
     // store dynamic event listening events
-    private HashMap<Player, Integer> lastPlayerDoorsOpened;
+    private HashMap<Player, Integer> lastPlayerDoorsOpened, lastPlayerFiresExtinguished;
     private HashMap<Player, HashMap<String, Integer>> lastPlayerBlocksBroken;
+    private HashMap<Player, List<Location>> lastPlayerBlocksBrokenLocations;
 
     private JavaPlugin plugin;
     private MissionEventListener eventListener;
@@ -90,7 +147,9 @@ public class MalmoStatsTracker implements StatsTracker {
         trackedStatsIndices = new HashMap<>();
         lastPlayerValues = new HashMap<>();
         lastPlayerDoorsOpened = new HashMap<>();
+        lastPlayerFiresExtinguished = new HashMap<>();
         lastPlayerBlocksBroken = new HashMap<>();
+        lastPlayerBlocksBrokenLocations = new HashMap<>();
 
         trackedStatNames.put("Distance Travelled", new Statistic[] {Statistic.FALL_ONE_CM, Statistic.SPRINT_ONE_CM, Statistic.SWIM_ONE_CM, Statistic.WALK_UNDER_WATER_ONE_CM, Statistic.WALK_ON_WATER_ONE_CM, Statistic.AVIATE_ONE_CM, Statistic.BOAT_ONE_CM, Statistic.CLIMB_ONE_CM, Statistic.CROUCH_ONE_CM, Statistic.PIG_ONE_CM, Statistic.FLY_ONE_CM, Statistic.HORSE_ONE_CM, Statistic.MINECART_ONE_CM, Statistic.WALK_ONE_CM});
         trackedStatNames.put("TimeAlive", new Statistic[] {Statistic.TIME_SINCE_DEATH});
@@ -121,6 +180,11 @@ public class MalmoStatsTracker implements StatsTracker {
         playerList = new ArrayList<>();
         initPlayerStats = new HashMap<>();
         lastPlayerStats = new HashMap<>();
+
+        lastPlayerDoorsOpened.clear();
+        lastPlayerFiresExtinguished.clear();
+        lastPlayerBlocksBroken.clear();
+        lastPlayerBlocksBrokenLocations.clear();
 
         for(Player p : plugin.getServer().getOnlinePlayers()) {
             playerList.add(p);
@@ -189,18 +253,29 @@ public class MalmoStatsTracker implements StatsTracker {
                 statChanged = true;
             }
 
-            //event listener: blocks broken
+            int firesExtinguished = eventListener.getFiresExtinguished(p);
+            if(!lastPlayerFiresExtinguished.containsKey(p) || firesExtinguished != lastPlayerFiresExtinguished.get(p)) {
+                lastPlayerFiresExtinguished.put(p, firesExtinguished);
+                statChanged = true;
+            }
+
+            //event listener: blocks broken and locations of these broken blocks
             HashMap<String, Integer> blocksBroken = eventListener.getBlocksBroken(p);
+            List<Location> blocksBrokenLocations = eventListener.getBlocksBrokenLocations(p);
 
             if(!lastPlayerBlocksBroken.containsKey(p) || blocksBroken.size() != lastPlayerBlocksBroken.get(p).size()) {
-                lastPlayerBlocksBroken.put(p, blocksBroken);
+                //create a new hashmap to ensure snapshot data is new and not overwritten
+                lastPlayerBlocksBroken.put(p, new HashMap<>(blocksBroken));
+                lastPlayerBlocksBrokenLocations.put(p, new ArrayList<>(blocksBrokenLocations));
                 statChanged = true;
             } else {
                 HashMap<String, Integer> lastBlocksBroken = lastPlayerBlocksBroken.get(p);
                 //if the sizes are the same, then they must have the same blocks, since we can only add blocks to hashmap, not remove them
                 for(String key : blocksBroken.keySet()) {
                     if(lastBlocksBroken.get(key) != blocksBroken.get(key)) {
-                        lastPlayerBlocksBroken.put(p, blocksBroken);
+                        //create a new hashmap to ensure snapshot data is new and not overwritten
+                        lastPlayerBlocksBroken.put(p, new HashMap<>(blocksBroken));
+                        lastPlayerBlocksBrokenLocations.put(p, new ArrayList<>(blocksBrokenLocations));
                         statChanged = true;
                         break;
                     }
@@ -231,6 +306,7 @@ public class MalmoStatsTracker implements StatsTracker {
                 }
 
                 playerLog.addProperty("DoorsOpened", String.valueOf(doorsOpened));
+                playerLog.addProperty("FiresExtinguished", String.valueOf(firesExtinguished));
 
                 JsonArray blocksDigged = new JsonArray();
 
@@ -263,6 +339,7 @@ public class MalmoStatsTracker implements StatsTracker {
         values.put("IsAlive", !p.isDead());
         values.put("Air", p.getRemainingAir());
         values.put("Name", p.getName());
+        values.put("IsSprinting", p.isSprinting());
 
         Location loc = p.getLocation();
         values.put("XPos", loc.getX());
@@ -270,6 +347,7 @@ public class MalmoStatsTracker implements StatsTracker {
         values.put("ZPos", loc.getZ());
         values.put("Pitch", loc.getPitch());
         values.put("Yaw", loc.getYaw());
+
 
         World world = p.getWorld();
         values.put("WorldTime", world.getTime());

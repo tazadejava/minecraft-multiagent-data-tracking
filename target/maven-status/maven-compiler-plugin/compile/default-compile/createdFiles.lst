@@ -1,12 +1,15 @@
+me\tazadejava\mission\VisibleBlocksRaycaster.class
 me\tazadejava\analyzer\PlayerAnalyzer.class
 me\tazadejava\mission\MalmoStatsTracker$1.class
 me\tazadejava\mission\MissionHandler$2.class
 me\tazadejava\blockranges\BlockRange2D.class
 me\tazadejava\blockranges\SpecialItem$ItemEventHooks.class
+me\tazadejava\mission\MissionCommandHandler$1.class
 me\tazadejava\actiontracker\ActionTrackerPlugin.class
 me\tazadejava\mission\StreamlinedStatsTracker.class
 me\tazadejava\mission\MalmoStatsTracker$LastStatsSnapshot.class
 me\tazadejava\blockranges\SelectionWand.class
+me\tazadejava\mission\VisibleBlocksRaycaster$RaycastBounds.class
 me\tazadejava\blockranges\SpecialItemEventListener.class
 me\tazadejava\mission\MissionEventListener.class
 me\tazadejava\blockranges\SpecialItem.class

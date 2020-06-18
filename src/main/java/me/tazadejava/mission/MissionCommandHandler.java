@@ -1,5 +1,6 @@
 package me.tazadejava.mission;
 
+import me.tazadejava.actiontracker.ActionTrackerPlugin;
 import me.tazadejava.actiontracker.Utils;
 import me.tazadejava.blockranges.BlockRange2D;
 import me.tazadejava.blockranges.SelectionWand;
@@ -11,6 +12,7 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.StringUtil;
 
 import java.util.ArrayList;
@@ -25,10 +27,12 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
 
     private static final String GENERIC_IMPROPER_COMMAND_MESSAGE = "Improper command. Usage: /mission <create/start/abort/list/set/add/getitem> [command-specific arguments]";
 
+    private final ActionTrackerPlugin plugin;
     private final MissionHandler missionHandler;
     private final HashMap<String, SpecialItem> specialItems;
 
-    public MissionCommandHandler(MissionHandler missionHandler, HashMap<String, SpecialItem> specialItems) {
+    public MissionCommandHandler(ActionTrackerPlugin plugin, MissionHandler missionHandler, HashMap<String, SpecialItem> specialItems) {
+        this.plugin = plugin;
         this.missionHandler = missionHandler;
         this.specialItems = specialItems;
     }
@@ -45,6 +49,19 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
             commandSender.sendMessage(GENERIC_IMPROPER_COMMAND_MESSAGE);
         } else {
             switch(args[0]) {
+                case "test":
+                    if(!(commandSender instanceof Player)) {
+                        commandSender.sendMessage(ChatColor.RED + "You must be a player to execute this command!");
+                        break;
+                    }
+
+                    new BukkitRunnable() {
+                        @Override
+                        public void run() {
+                            new VisibleBlocksRaycaster().getVisibleBlocks((Player) commandSender);
+                        }
+                    }.runTaskTimer(plugin, 0, 10L);
+                    break;
                 case "create":
                     if(args.length < 2) {
                         commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission create <mission name>");
