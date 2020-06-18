@@ -60,7 +60,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                         public void run() {
                             new VisibleBlocksRaycaster().getVisibleBlocks((Player) commandSender);
                         }
-                    }.runTaskTimer(plugin, 0, 10L);
+                    }.runTaskTimer(plugin, 0, 5L);
                     break;
                 case "create":
                     if(args.length < 2) {
