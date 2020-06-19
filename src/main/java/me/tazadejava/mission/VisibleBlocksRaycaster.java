@@ -12,60 +12,100 @@ import java.util.ArrayList;
 import java.util.List;
 
 //get the blocks that the player can see
-//based on algorithm that Essie wrote in python; ported to Java
+//inspired by algorithm that Essie wrote in python
 public class VisibleBlocksRaycaster {
 
     class RaycastBounds {
 
-//        private static final int FOV_ANGLE_HALF = 35;
-        private static final int FOV_ANGLE_HALF = 45;
+        private final float FOV_HORIZONTAL_ANGLE_HALF = (float) Math.toRadians(45);//35 //increased angle for better accuracy
+        private final float FOV_VERTICAL_ANGLE_HALF = (float) Math.toRadians(53);//43 //increased angle for better accuracy
 
-        private Vector playerLocation;
+        private Vector playerLocation, playerDirection;
 
         private double leftSlope, rightSlope;
-        private float axisDeltaAngle;
+        private float horizontalAxisDeltaAngle;;
+
+        private double downSlope, upSlope;
+        private float verticalAxisDeltaAngle;
 
         public RaycastBounds(Player p) {
             playerLocation = p.getEyeLocation().toVector();
+            playerDirection = p.getEyeLocation().getDirection();
+//            Vector dir = p.getEyeLocation().getDirection();
 
-            Vector dir = p.getEyeLocation().getDirection();
+//            calculateHorizontalSlopesAndAngles(dir, p.getEyeLocation().getYaw());
+//            calculateVerticalSlopesAndAngles(dir, p.getEyeLocation().getPitch());
+        }
 
+        private void calculateHorizontalSlopesAndAngles(Vector dir, float yaw) {
             //axis: z leftright, x updown
             //logic: the block is within the bounds if the player's direction is aligned to an axis and the block is above the line of both the left and right vectors, adjusted to match the aligned axis.
 
             //find angle between x axis and player direction
-            axisDeltaAngle = dir.angle(new Vector(1, 0, 0));
+            horizontalAxisDeltaAngle = dir.angle(new Vector(1, 0, 0));
 
             //need to wrap around axis angle more, depending on quadrant; 0 degrees is up in this case
 
             //case 1: is in 4th quadrant; need to invert and add PI
             //case 2: is in 1st quadrant; need to invert and add 270 degrees
-            float yaw = p.getEyeLocation().getYaw();
             if(yaw > 0 && yaw < 90) {
-                float inversion = (float) Math.PI - axisDeltaAngle;
-                axisDeltaAngle = inversion + (float) Math.PI;
+                float inversion = (float) Math.PI - horizontalAxisDeltaAngle;
+                horizontalAxisDeltaAngle = inversion + (float) Math.PI;
             } else if(yaw > 270 && yaw < 360) {
-                float inversion = (float) (Math.PI / 2) - axisDeltaAngle;
-                axisDeltaAngle = inversion + ((float) Math.PI * (3f / 2));
+                float inversion = (float) (Math.PI / 2) - horizontalAxisDeltaAngle;
+                horizontalAxisDeltaAngle = inversion + ((float) Math.PI * (3f / 2));
             }
-            Bukkit.broadcastMessage(Math.toDegrees(axisDeltaAngle) + " " + Utils.getFormattedLocation(p.getEyeLocation()));
 
             //the first angle is the horizontal FOV of the player
             //the second angle adjusts the left and right vectors to match this delta angle
-            Vector leftVectorAdjusted = dir.clone().rotateAroundY(Math.toRadians(-FOV_ANGLE_HALF) - axisDeltaAngle);
-            Vector rightVectorAdjusted = dir.clone().rotateAroundY(Math.toRadians(FOV_ANGLE_HALF) - axisDeltaAngle);
+            Vector leftVectorAdjusted = dir.clone().rotateAroundY(-FOV_HORIZONTAL_ANGLE_HALF - horizontalAxisDeltaAngle);
+            Vector rightVectorAdjusted = dir.clone().rotateAroundY(FOV_HORIZONTAL_ANGLE_HALF - horizontalAxisDeltaAngle);
             leftSlope = leftVectorAdjusted.getX() / leftVectorAdjusted.getZ();
             rightSlope = rightVectorAdjusted.getX() / rightVectorAdjusted.getZ();
         }
 
+        private void calculateVerticalSlopesAndAngles(Vector dir, float pitch) {
+            //this algorithm is nearly identical to the horizontal one above; it simply adjusts axes to account for vertical rather than horizontal; also, since angle can only reach 180 degrees, it does not need to adjust depending on angle
+
+            //find angle between y axis and player dir
+//            verticalAxisDeltaAngle = dir.angle(new Vector(0, 1, 0));
+
+//            Bukkit.broadcastMessage("ANGLE " + verticalAxisDeltaAngle + " PITCH " + pitch);
+
+//            if(yaw > 0 && yaw < 90) {
+//                float inversion = (float) Math.PI - verticalAxisDeltaAngle;
+//                verticalAxisDeltaAngle = inversion + (float) Math.PI;
+//            } else if(yaw > 270 && yaw < 360) {
+//                float inversion = (float) (Math.PI / 2) - verticalAxisDeltaAngle;
+//                verticalAxisDeltaAngle = inversion + ((float) Math.PI * (3f / 2));
+//            }
+
+            //the first angle is the horizontal FOV of the player
+            //the second angle adjusts the left and right vectors to match this delta angle
+//            Vector downVectorAdjusted = dir.clone().rotate
+//            Vector downVectorAdjusted = dir.clone().rotateAroundX(Math.toRadians(-FOV_VERTICAL_ANGLE_HALF) - verticalAxisDeltaAngle);
+//            Vector upVectorAdjusted = dir.clone().rotateAroundX(Math.toRadians(FOV_VERTICAL_ANGLE_HALF) - verticalAxisDeltaAngle);
+//            downSlope = downVectorAdjusted.getY() / downVectorAdjusted.getZ();
+//            upSlope = upVectorAdjusted.getY() / upVectorAdjusted.getZ();
+        }
+
+//        public boolean isInBounds(Location loc) {
+//            Vector vecToLoc = loc.toVector().subtract(playerLocation);
+//
+////            Location adjustedLocHorizontal = vecToLoc.clone().rotateAroundY(-horizontalAxisDeltaAngle).toLocation(loc.getWorld());
+////            boolean isInHorizontalBounds = (adjustedLocHorizontal.getX() >= leftSlope * adjustedLocHorizontal.getZ())
+////                    && (adjustedLocHorizontal.getX() >= rightSlope * adjustedLocHorizontal.getZ());
+//            boolean isInHorizontalBounds = true;
+//
+//            float verticalAngleDelta = vecToLoc.angle(playerDirection);
+//            boolean isInVerticalBounds = verticalAngleDelta <= 50;
+//
+//            return isInHorizontalBounds && isInVerticalBounds;
+//        }
+
         public boolean isInBounds(Location loc) {
             Vector vecToLoc = loc.toVector().subtract(playerLocation);
-
-            vecToLoc.rotateAroundY(-axisDeltaAngle);
-            Location adjustedLoc = vecToLoc.toLocation(loc.getWorld());
-
-            return (adjustedLoc.getX() >= leftSlope * adjustedLoc.getZ())
-                    && (adjustedLoc.getX() >= rightSlope * adjustedLoc.getZ());
+            return vecToLoc.angle(playerDirection) <= Math.toRadians(50);
         }
     }
 
@@ -90,18 +130,16 @@ public class VisibleBlocksRaycaster {
         //for now, get nearby blocks
         Location playerBlockLoc = p.getEyeLocation();
         for(int dx = -5; dx <= 5; dx++) {
-            for(int dz = -5; dz <= 5; dz++) {
-                Location loc = playerBlockLoc.clone().add(dx, 0, dz);
+            for(int dy = -5; dy <= 5; dy++) {
+                for (int dz = -5; dz <= 5; dz++) {
+                    Location loc = playerBlockLoc.clone().add(dx, dy, dz);
 
-                if(loc.getBlock().getType() != Material.AIR) {
-                    if(bounds.isInBounds(loc)) {
-                        if(loc.getBlock().getType() == Material.YELLOW_STAINED_GLASS) {
+                    if (loc.getBlock().getType() != Material.AIR) {
+                        if (bounds.isInBounds(loc)) {
                             loc.getBlock().setType(Material.GREEN_STAINED_GLASS);
                         } else {
-                            loc.getBlock().setType(Material.GREEN_CONCRETE);
+                            loc.getBlock().setType(Material.RED_WOOL);
                         }
-                    } else {
-                        loc.getBlock().setType(Material.RED_WOOL);
                     }
                 }
             }
