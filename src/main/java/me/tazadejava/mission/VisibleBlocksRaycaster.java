@@ -1,15 +1,20 @@
 package me.tazadejava.mission;
 
-import me.tazadejava.actiontracker.Utils;
 import org.bukkit.Bukkit;
+import org.bukkit.FluidCollisionMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
+import org.bukkit.util.RayTraceResult;
 import org.bukkit.util.Vector;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Set;
 
 //get the blocks that the player can see
 //inspired by algorithm that Essie wrote in python
@@ -21,130 +26,154 @@ public class VisibleBlocksRaycaster {
         private final float FOV_VERTICAL_ANGLE_HALF = (float) Math.toRadians(53);//43 //increased angle for better accuracy
 
         private Vector playerLocation, playerDirection;
-
-        private double leftSlope, rightSlope;
-        private float horizontalAxisDeltaAngle;;
-
-        private double downSlope, upSlope;
-        private float verticalAxisDeltaAngle;
+        private double angle;
 
         public RaycastBounds(Player p) {
             playerLocation = p.getEyeLocation().toVector();
             playerDirection = p.getEyeLocation().getDirection();
-//            Vector dir = p.getEyeLocation().getDirection();
-
-//            calculateHorizontalSlopesAndAngles(dir, p.getEyeLocation().getYaw());
-//            calculateVerticalSlopesAndAngles(dir, p.getEyeLocation().getPitch());
+            angle = Math.toRadians(50);
         }
-
-        private void calculateHorizontalSlopesAndAngles(Vector dir, float yaw) {
-            //axis: z leftright, x updown
-            //logic: the block is within the bounds if the player's direction is aligned to an axis and the block is above the line of both the left and right vectors, adjusted to match the aligned axis.
-
-            //find angle between x axis and player direction
-            horizontalAxisDeltaAngle = dir.angle(new Vector(1, 0, 0));
-
-            //need to wrap around axis angle more, depending on quadrant; 0 degrees is up in this case
-
-            //case 1: is in 4th quadrant; need to invert and add PI
-            //case 2: is in 1st quadrant; need to invert and add 270 degrees
-            if(yaw > 0 && yaw < 90) {
-                float inversion = (float) Math.PI - horizontalAxisDeltaAngle;
-                horizontalAxisDeltaAngle = inversion + (float) Math.PI;
-            } else if(yaw > 270 && yaw < 360) {
-                float inversion = (float) (Math.PI / 2) - horizontalAxisDeltaAngle;
-                horizontalAxisDeltaAngle = inversion + ((float) Math.PI * (3f / 2));
-            }
-
-            //the first angle is the horizontal FOV of the player
-            //the second angle adjusts the left and right vectors to match this delta angle
-            Vector leftVectorAdjusted = dir.clone().rotateAroundY(-FOV_HORIZONTAL_ANGLE_HALF - horizontalAxisDeltaAngle);
-            Vector rightVectorAdjusted = dir.clone().rotateAroundY(FOV_HORIZONTAL_ANGLE_HALF - horizontalAxisDeltaAngle);
-            leftSlope = leftVectorAdjusted.getX() / leftVectorAdjusted.getZ();
-            rightSlope = rightVectorAdjusted.getX() / rightVectorAdjusted.getZ();
-        }
-
-        private void calculateVerticalSlopesAndAngles(Vector dir, float pitch) {
-            //this algorithm is nearly identical to the horizontal one above; it simply adjusts axes to account for vertical rather than horizontal; also, since angle can only reach 180 degrees, it does not need to adjust depending on angle
-
-            //find angle between y axis and player dir
-//            verticalAxisDeltaAngle = dir.angle(new Vector(0, 1, 0));
-
-//            Bukkit.broadcastMessage("ANGLE " + verticalAxisDeltaAngle + " PITCH " + pitch);
-
-//            if(yaw > 0 && yaw < 90) {
-//                float inversion = (float) Math.PI - verticalAxisDeltaAngle;
-//                verticalAxisDeltaAngle = inversion + (float) Math.PI;
-//            } else if(yaw > 270 && yaw < 360) {
-//                float inversion = (float) (Math.PI / 2) - verticalAxisDeltaAngle;
-//                verticalAxisDeltaAngle = inversion + ((float) Math.PI * (3f / 2));
-//            }
-
-            //the first angle is the horizontal FOV of the player
-            //the second angle adjusts the left and right vectors to match this delta angle
-//            Vector downVectorAdjusted = dir.clone().rotate
-//            Vector downVectorAdjusted = dir.clone().rotateAroundX(Math.toRadians(-FOV_VERTICAL_ANGLE_HALF) - verticalAxisDeltaAngle);
-//            Vector upVectorAdjusted = dir.clone().rotateAroundX(Math.toRadians(FOV_VERTICAL_ANGLE_HALF) - verticalAxisDeltaAngle);
-//            downSlope = downVectorAdjusted.getY() / downVectorAdjusted.getZ();
-//            upSlope = upVectorAdjusted.getY() / upVectorAdjusted.getZ();
-        }
-
-//        public boolean isInBounds(Location loc) {
-//            Vector vecToLoc = loc.toVector().subtract(playerLocation);
-//
-////            Location adjustedLocHorizontal = vecToLoc.clone().rotateAroundY(-horizontalAxisDeltaAngle).toLocation(loc.getWorld());
-////            boolean isInHorizontalBounds = (adjustedLocHorizontal.getX() >= leftSlope * adjustedLocHorizontal.getZ())
-////                    && (adjustedLocHorizontal.getX() >= rightSlope * adjustedLocHorizontal.getZ());
-//            boolean isInHorizontalBounds = true;
-//
-//            float verticalAngleDelta = vecToLoc.angle(playerDirection);
-//            boolean isInVerticalBounds = verticalAngleDelta <= 50;
-//
-//            return isInHorizontalBounds && isInVerticalBounds;
-//        }
 
         public boolean isInBounds(Location loc) {
             Vector vecToLoc = loc.toVector().subtract(playerLocation);
-            return vecToLoc.angle(playerDirection) <= Math.toRadians(50);
+            return vecToLoc.angle(playerDirection) <= angle;
+            //TODO: for more fine bound-checking, compare the horizontal and vertical angles separately
         }
     }
 
-    /*
-    Idea:
-    Two line segments going out horizontally and vertically
-    They represent rectangular bounds of where the player can look
-    If within the line segment bounds, then the player can see it. Otherwise, they cannot
+    private Set<Material> transparentBlocks;
 
-    Origin: player location
-    Direction: player location direction vector
+    private int[] deltaDirs = new int[] {
+            1, 0, 0,
+            -1, 0, 0,
+            0, 1, 0,
+            0, -1, 0,
+            0, 0, 1,
+            0, 0, -1};
 
-    Get left and right horizontal lines, then get lower and upper vertical lines, then treat them as bounds
-    If the player sees them, turn it into green wool; otherwise, red wool
-     */
+    public VisibleBlocksRaycaster() {
+        transparentBlocks = new HashSet<>();
+        transparentBlocks.addAll(Arrays.asList(Material.AIR, Material.CAVE_AIR, Material.VOID_AIR, Material.GLASS, Material.GLASS_PANE));
+    }
+
+    private boolean isTransparent(Material material) {
+        if(transparentBlocks.contains(material)) {
+            return true;
+        }
+        if(material.toString().contains("GLASS")) {
+            return true;
+        }
+
+        return false;
+    }
 
     public List<Block> getVisibleBlocks(Player p) {
-        List<Block> blocks = new ArrayList<>();
+        Set<Block> blocks = new HashSet<>();
 
         RaycastBounds bounds = new RaycastBounds(p);
 
-        //for now, get nearby blocks
-        Location playerBlockLoc = p.getEyeLocation();
-        for(int dx = -5; dx <= 5; dx++) {
-            for(int dy = -5; dy <= 5; dy++) {
-                for (int dz = -5; dz <= 5; dz++) {
-                    Location loc = playerBlockLoc.clone().add(dx, dy, dz);
+        //to check which blocks are being seen as an estimate: need to raycast the current target block, then do other raycasts towards left/right and up/down to capture all possible in sight; breadth search from each to find the surrounding blocks
+        //to check if block is visible to player: if block is surrounded by untransparent blocks, then no. otherwise, if the transparent block is one that faces the player, then maybe
 
-                    if (loc.getBlock().getType() != Material.AIR) {
-                        if (bounds.isInBounds(loc)) {
-                            loc.getBlock().setType(Material.GREEN_STAINED_GLASS);
-                        } else {
-                            loc.getBlock().setType(Material.RED_WOOL);
+        int maxDistance = 10;
+        int maxDistanceSquared = (int) Math.pow(maxDistance, 2);
+
+        List<Block> lineOfSight = p.getLineOfSight(transparentBlocks, maxDistance);
+
+        if(!lineOfSight.isEmpty() && lineOfSight.get(lineOfSight.size() - 1).getType() != Material.AIR) {
+            Location startLocation = lineOfSight.get(lineOfSight.size() - 2).getLocation();
+            //center the location to be fairly raycasted by all angles
+            startLocation.add(0.5, 0.5, 0.5);
+            LinkedList<Location> openBlocksList = new LinkedList<>();
+            Set<Location> closedBlocksList = new HashSet<>();
+
+            openBlocksList.add(startLocation);
+            closedBlocksList.add(startLocation);
+
+            int openCount = 0;
+            while (!openBlocksList.isEmpty()) {
+                openCount++;
+                Location loc = openBlocksList.poll();
+
+                for (int i = 0; i < 6; i++) {
+                    Location deltaLoc = loc.clone().add(deltaDirs[i * 3], deltaDirs[i * 3 + 1], deltaDirs[i * 3 + 2]);
+                    Block deltaBlock = deltaLoc.getBlock();
+
+                    if(!bounds.isInBounds(deltaLoc)) {
+                        if(deltaBlock.getType() != Material.AIR) {
+                            deltaBlock.setType(Material.RED_WOOL);
                         }
+                        continue;
+                    }
+                    if(deltaLoc.distanceSquared(startLocation) > maxDistanceSquared) {
+                        if(deltaBlock.getType() != Material.AIR) {
+                            deltaBlock.setType(Material.RED_WOOL);
+                        }
+                        continue;
+                    }
+
+                    if(deltaBlock.getType() == Material.AIR) {
+                        if(!closedBlocksList.contains(deltaLoc)) {
+                            openBlocksList.add(deltaLoc);
+                            closedBlocksList.add(deltaLoc);
+                        }
+                    } else {
+//                        if(!blocks.contains(deltaBlock)) {
+                        blocks.add(deltaBlock);
+//                        }
                     }
                 }
             }
+
+//            Bukkit.broadcastMessage("" + closedBlocksList.size() + " RAN " + openCount + " TIMES");
         }
 
-        return blocks;
+        //TODO: TEMP JUST DO TARGET BLOCK
+        blocks.clear();
+        blocks.add(lineOfSight.get(lineOfSight.size() - 1));
+
+        Material pick = (new Material[] {Material.GREEN_STAINED_GLASS, Material.BLACK_STAINED_GLASS, Material.BLUE_STAINED_GLASS, Material.WHITE_STAINED_GLASS, Material.RED_STAINED_GLASS, Material.PURPLE_STAINED_GLASS})[(int) (Math.random() * 6)];
+
+        //run one last loop to make sure the blocks found are not behind other blocks in player's view
+        List<Block> finalBlocks = new ArrayList<>();
+        Location startLoc = p.getEyeLocation();
+//        Location startLoc = p.getLocation().getBlock().getLocation().add(0.5, 0.5, 0.5);
+//        Location startLoc = p.getEyeLocation();
+        for(Block block : blocks) {
+
+//            Bukkit.broadcastMessage(dx + " " + dy + " " + dz);
+
+            RayTraceResult result = p.getWorld().rayTraceBlocks(startLoc, block.getLocation().add(.5, .5, .5).toVector().subtract(startLoc.toVector()), maxDistance, FluidCollisionMode.SOURCE_ONLY, true);
+
+            if(result != null && result.getHitBlock() != null && result.getHitBlock().equals(block)) {
+                finalBlocks.add(block);
+
+                if(lineOfSight.get(lineOfSight.size() - 1).equals(block)) {
+                    block.setType(Material.YELLOW_STAINED_GLASS);
+                } else {
+                    block.setType(pick);
+                }
+            } else {
+                if(result.getHitBlock() != null) {
+                    Bukkit.broadcastMessage("WRONG: " + result.getHitBlock().getLocation().toVector().subtract(block.getLocation().toVector()));
+                }
+                //try again with alternative location
+//                Location secondStartLoc = p.getLocation().getBlock().getLocation().add(0.5, 0.5, 0.5);
+//
+//                RayTraceResult secondResult = p.getWorld().rayTraceBlocks(secondStartLoc, block.getLocation().add(0.5, 0.5, 0.5).toVector().subtract(startLoc.toVector()), maxDistance, FluidCollisionMode.SOURCE_ONLY, true);
+//
+//                if(secondResult != null && secondResult.getHitBlock() != null && secondResult.getHitBlock().equals(block)) {
+//                    finalBlocks.add(block);
+//
+//                    if (lineOfSight.get(lineOfSight.size() - 1).equals(block)) {
+//                        block.setType(Material.YELLOW_STAINED_GLASS);
+//                    } else {
+//                        block.setType(pick);
+//                    }
+//                }
+            }
+        }
+
+        return finalBlocks;
     }
 }
