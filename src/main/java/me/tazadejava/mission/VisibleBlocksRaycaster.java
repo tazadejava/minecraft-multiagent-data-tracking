@@ -1,17 +1,23 @@
 package me.tazadejava.mission;
 
 import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
 import org.bukkit.FluidCollisionMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
+import org.bukkit.util.BlockIterator;
 import org.bukkit.util.RayTraceResult;
 import org.bukkit.util.Vector;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
@@ -67,8 +73,18 @@ public class VisibleBlocksRaycaster {
         return false;
     }
 
+    //current status of this method:
+    //IT works... kinda. it will capture MOST of the blocks that are visible to the player, and it will not
+    //capture the blocks hidden from the player. however, sometimes it does not capture ALL the blocks visible
+    //to the player, and further debugging is necessary to make this fixed. SEE:
+    //CHANGEBLOCKS = true
+    //THEN DETERMINE HOW BLOCKS HIDDEN IN THE RAY SHOULD BE HANDLED
+    //possibly the initial block algo should be revised. perhaps the final blocks algo should be. who knows?
     public List<Block> getVisibleBlocks(Player p) {
-        Set<Block> blocks = new HashSet<>();
+        boolean CHANGEBLOCKS = false;
+        boolean DEBUG = false;
+
+        List<Block> blocks = new ArrayList<>();
 
         RaycastBounds bounds = new RaycastBounds(p);
 
@@ -90,9 +106,7 @@ public class VisibleBlocksRaycaster {
             openBlocksList.add(startLocation);
             closedBlocksList.add(startLocation);
 
-            int openCount = 0;
             while (!openBlocksList.isEmpty()) {
-                openCount++;
                 Location loc = openBlocksList.poll();
 
                 for (int i = 0; i < 6; i++) {
@@ -100,13 +114,13 @@ public class VisibleBlocksRaycaster {
                     Block deltaBlock = deltaLoc.getBlock();
 
                     if(!bounds.isInBounds(deltaLoc)) {
-                        if(deltaBlock.getType() != Material.AIR) {
+                        if(CHANGEBLOCKS && deltaBlock.getType() != Material.AIR) {
                             deltaBlock.setType(Material.RED_WOOL);
                         }
                         continue;
                     }
                     if(deltaLoc.distanceSquared(startLocation) > maxDistanceSquared) {
-                        if(deltaBlock.getType() != Material.AIR) {
+                        if(CHANGEBLOCKS && deltaBlock.getType() != Material.AIR) {
                             deltaBlock.setType(Material.RED_WOOL);
                         }
                         continue;
@@ -118,9 +132,9 @@ public class VisibleBlocksRaycaster {
                             closedBlocksList.add(deltaLoc);
                         }
                     } else {
-//                        if(!blocks.contains(deltaBlock)) {
-                        blocks.add(deltaBlock);
-//                        }
+                        if(!blocks.contains(deltaBlock)) {
+                            blocks.add(deltaBlock);
+                        }
                     }
                 }
             }
@@ -128,49 +142,163 @@ public class VisibleBlocksRaycaster {
 //            Bukkit.broadcastMessage("" + closedBlocksList.size() + " RAN " + openCount + " TIMES");
         }
 
-        //TODO: TEMP JUST DO TARGET BLOCK
-        blocks.clear();
-        blocks.add(lineOfSight.get(lineOfSight.size() - 1));
-
         Material pick = (new Material[] {Material.GREEN_STAINED_GLASS, Material.BLACK_STAINED_GLASS, Material.BLUE_STAINED_GLASS, Material.WHITE_STAINED_GLASS, Material.RED_STAINED_GLASS, Material.PURPLE_STAINED_GLASS})[(int) (Math.random() * 6)];
 
+        //TODO: TEMP ONLY TARGET BLOCK
+        if(DEBUG) {
+            blocks.clear();
+            blocks.add(lineOfSight.get(lineOfSight.size() - 1));
+        }
+
         //run one last loop to make sure the blocks found are not behind other blocks in player's view
+
         List<Block> finalBlocks = new ArrayList<>();
-        Location startLoc = p.getEyeLocation();
-//        Location startLoc = p.getLocation().getBlock().getLocation().add(0.5, 0.5, 0.5);
-//        Location startLoc = p.getEyeLocation();
+        Location startLoc = p.getEyeLocation().getBlock().getLocation().add(0.5,0.5,0.5);
+
+        HashMap<Location, Double> distances = new HashMap<>();
+
+        for(Block b : blocks) {
+            distances.put(b.getLocation(), b.getLocation().distanceSquared(startLoc));
+        }
+
+        //sort the blocks first to identify blocks behind visible ones
+        Collections.sort(blocks, new Comparator<Block>() {
+            @Override
+            public int compare(Block o1, Block o2) {
+                return Double.compare(distances.get(o1.getLocation()), distances.get(o2.getLocation()));
+            }
+        });
+
+        Set<Location> hiddenBlocks = new HashSet<>();
+        boolean foundStone = false;
         for(Block block : blocks) {
+            if(hiddenBlocks.contains(block.getLocation())) {
+                continue;
+            }
 
-//            Bukkit.broadcastMessage(dx + " " + dy + " " + dz);
+            Material originalMat = block.getType();
 
-            RayTraceResult result = p.getWorld().rayTraceBlocks(startLoc, block.getLocation().add(.5, .5, .5).toVector().subtract(startLoc.toVector()), maxDistance, FluidCollisionMode.SOURCE_ONLY, true);
+            BlockIterator inBetweenBlocks = new BlockIterator(p.getWorld(), startLoc.toVector(), block.getLocation().add(0.5,0.5,0.5).toVector().subtract(startLoc.toVector()), 0, maxDistance);
 
-            if(result != null && result.getHitBlock() != null && result.getHitBlock().equals(block)) {
-                finalBlocks.add(block);
+            boolean foundBlock = false;
+            List<String> mats = new ArrayList<>();
+            int matindex = 0;
+            Block nextInBetweenBlock = null;
+            Block lastBlock;
+            while(inBetweenBlocks.hasNext()) {
+                lastBlock = nextInBetweenBlock;
+                nextInBetweenBlock = inBetweenBlocks.next();
 
-                if(lineOfSight.get(lineOfSight.size() - 1).equals(block)) {
-                    block.setType(Material.YELLOW_STAINED_GLASS);
+                if(nextInBetweenBlock.equals(block)) {
+                    mats.add(ChatColor.RED + nextInBetweenBlock.getType().toString() + ChatColor.WHITE);
                 } else {
-                    block.setType(pick);
+                    mats.add(nextInBetweenBlock.getType().toString());
                 }
-            } else {
-                if(result.getHitBlock() != null) {
-                    Bukkit.broadcastMessage("WRONG: " + result.getHitBlock().getLocation().toVector().subtract(block.getLocation().toVector()));
+                matindex++;
+
+                if(transparentBlocks.contains(nextInBetweenBlock.getType())) {
+                    mats.set(matindex - 1, ChatColor.BLUE + nextInBetweenBlock.getType().toString() + ChatColor.WHITE);
+                    continue;
                 }
-                //try again with alternative location
-//                Location secondStartLoc = p.getLocation().getBlock().getLocation().add(0.5, 0.5, 0.5);
-//
-//                RayTraceResult secondResult = p.getWorld().rayTraceBlocks(secondStartLoc, block.getLocation().add(0.5, 0.5, 0.5).toVector().subtract(startLoc.toVector()), maxDistance, FluidCollisionMode.SOURCE_ONLY, true);
-//
-//                if(secondResult != null && secondResult.getHitBlock() != null && secondResult.getHitBlock().equals(block)) {
-//                    finalBlocks.add(block);
-//
-//                    if (lineOfSight.get(lineOfSight.size() - 1).equals(block)) {
-//                        block.setType(Material.YELLOW_STAINED_GLASS);
-//                    } else {
-//                        block.setType(pick);
-//                    }
+//                if(hiddenBlocks.contains(nextInBetweenBlock.getLocation())) {
+//                    mats.set(matindex - 1, ChatColor.LIGHT_PURPLE + nextInBetweenBlock.getType().toString() + ChatColor.WHITE);
+//                    continue;
 //                }
+
+                if(!foundBlock && block.equals(nextInBetweenBlock)) {
+                    foundBlock = true;
+                    finalBlocks.add(block);
+
+                    mats.set(matindex - 1, ChatColor.GOLD + nextInBetweenBlock.getType().toString() + ChatColor.WHITE);
+                    if(lineOfSight.get(lineOfSight.size() - 1).equals(block)) {
+                        if(CHANGEBLOCKS) block.setType(Material.YELLOW_STAINED_GLASS);
+                    } else {
+                        if(CHANGEBLOCKS) block.setType(pick);
+                    }
+                } else {
+                    //if the target block has not yet been found, and there is a block in the way
+                    //if this block has a perpendicular air block, we can pretend it is air as well
+                    //to determine perpendicular: check last block, and make sure the distance
+                    //from that block to this relative block > 1
+                    boolean hasAdjacentCloseAirBlock = false;
+                    double dist = nextInBetweenBlock.getLocation().distanceSquared(startLoc);
+                    for (int i = 0; i < 6; i++) {
+                        Block relativeBlock = nextInBetweenBlock.getLocation().add(deltaDirs[i * 3], deltaDirs[i * 3 + 1], deltaDirs[i * 3 + 2]).getBlock();
+
+                        if (transparentBlocks.contains(relativeBlock.getType())) {
+                            double relativeDist = relativeBlock.getLocation().distanceSquared(startLoc);
+                            double lastRelativeDist = relativeBlock.getLocation().distanceSquared(lastBlock.getLocation());
+
+//                                if (dist - relativeDist >= 0 || (int) Math.abs(dist - relativeDist) <= 1) {
+//                                if (dist - relativeDist >= 0 && lastRelativeDist >= 1) {
+                            if (dist - relativeDist >= 0 && !lastBlock.equals(relativeBlock)) {
+                                mats.set(matindex - 1, "" + ChatColor.GREEN + relativeBlock
+                                        .getType() + "(" + mats.get(matindex - 1) + ")" + ChatColor.WHITE);
+                                hasAdjacentCloseAirBlock = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if(!hasAdjacentCloseAirBlock) {
+                        if(foundBlock) {
+                            mats.set(matindex - 1, ChatColor.RED + nextInBetweenBlock.getType().toString() + ChatColor.WHITE);
+                            hiddenBlocks.add(nextInBetweenBlock.getLocation());
+                        } else {
+                            mats.set(matindex - 1, ChatColor.DARK_RED + nextInBetweenBlock.getType().toString() + ChatColor.WHITE);
+                            hiddenBlocks.add(block.getLocation());
+                            hiddenBlocks.add(nextInBetweenBlock.getLocation());
+                            foundBlock = true;
+                        }
+                    }
+
+//                    if(foundBlock) {
+//                        mats.set(matindex - 1, ChatColor.RED + nextInBetweenBlock.getType().toString() + ChatColor.WHITE);
+//                        hiddenBlocks.add(nextInBetweenBlock.getLocation());
+//                    } else if(lastBlock != null) {
+//                        //if the target block has not yet been found, and there is a block in the way
+//                        //if this block has a perpendicular air block, we can pretend it is air as well
+//                        //to determine perpendicular: check last block, and make sure the distance
+//                        //from that block to this relative block > 1
+//                        boolean hasAdjacentCloseAirBlock = false;
+//                        double dist = nextInBetweenBlock.getLocation().distanceSquared(startLoc);
+//                        for (int i = 0; i < 6; i++) {
+//                            Block relativeBlock = nextInBetweenBlock.getLocation().add(deltaDirs[i * 3], deltaDirs[i * 3 + 1], deltaDirs[i * 3 + 2]).getBlock();
+//
+//                            if (transparentBlocks.contains(relativeBlock.getType())) {
+//                                double relativeDist = relativeBlock.getLocation().distanceSquared(startLoc);
+//                                double lastRelativeDist = relativeBlock.getLocation().distanceSquared(lastBlock.getLocation());
+//
+////                                if (dist - relativeDist >= 0 || (int) Math.abs(dist - relativeDist) <= 1) {
+////                                if (dist - relativeDist >= 0 && lastRelativeDist >= 1) {
+//                                if (dist - relativeDist >= 0 && !lastBlock.equals(relativeBlock)) {
+//                                    mats.set(matindex - 1, "" + ChatColor.GREEN + relativeBlock
+//                                            .getType() + "(" + mats.get(matindex - 1) + ")" + ChatColor.WHITE);
+//                                    hasAdjacentCloseAirBlock = true;
+//                                    break;
+//                                }
+//                            }
+//                        }
+//
+//                        if(!hasAdjacentCloseAirBlock) {
+//                            mats.set(matindex - 1, ChatColor.DARK_RED + nextInBetweenBlock.getType().toString() + ChatColor.WHITE);
+//                            hiddenBlocks.add(block.getLocation());
+//                            hiddenBlocks.add(nextInBetweenBlock.getLocation());
+//                            foundBlock = true;
+//                        }
+//                    }
+                }
+            }
+
+            if(DEBUG || originalMat == Material.STONE) {
+                if(!foundStone) {
+                    foundStone = true;
+                    Bukkit.broadcastMessage("START STONES:");
+                }
+
+                if(mats.contains(ChatColor.GOLD + "STONE" + ChatColor.WHITE)) {
+                    Bukkit.broadcastMessage(mats.toString());
+                }
             }
         }
 

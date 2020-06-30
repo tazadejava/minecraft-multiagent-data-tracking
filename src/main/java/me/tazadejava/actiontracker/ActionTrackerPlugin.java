@@ -16,6 +16,8 @@ public class ActionTrackerPlugin extends JavaPlugin {
 
     private MissionHandler missionHandler;
 
+    private MissionCommandHandler commandHandler;
+
     @EventHandler
     public void onEnable() {
         HashMap<String, SpecialItem> specialItems = new HashMap<>();
@@ -27,7 +29,6 @@ public class ActionTrackerPlugin extends JavaPlugin {
 
         getServer().getPluginManager().registerEvents(new SpecialItemEventListener(specialItems.values()), this);
 
-        MissionCommandHandler commandHandler;
         getCommand("mission").setExecutor(commandHandler = new MissionCommandHandler(this, missionHandler, specialItems));
         getCommand("mission").setTabCompleter(commandHandler);
     }
@@ -35,5 +36,7 @@ public class ActionTrackerPlugin extends JavaPlugin {
     @EventHandler
     public void onDisable() {
         missionHandler.onDisable();
+
+        commandHandler.restoreBlocks(null);
     }
 }

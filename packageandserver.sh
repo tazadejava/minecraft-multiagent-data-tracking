@@ -6,7 +6,7 @@ echo "${output}"
 
 case $output in
   *"BUILD SUCCESS"*)
-    cp C:/Users/Tonit/Documents/MIT/UROP/ActionTrackerPlugin/target/ActionTracker.jar C:/Users/Tonit/Documents/MIT/UROP/DataTrackingTestServer/plugins/ActionTracker.jar -f
+    cp /home/yoshi/Documents/GenesisUROP/ActionTrackerPlugin/target/ActionTracker.jar /home/yoshi/Documents/GenesisUROP/DataTrackingTestServer/plugins/ActionTracker.jar -f
 	echo "SUCCESS!"
 	sleep 2
 	;;

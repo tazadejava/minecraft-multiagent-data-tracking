@@ -6,6 +6,8 @@ import me.tazadejava.blockranges.BlockRange2D;
 import me.tazadejava.blockranges.SelectionWand;
 import me.tazadejava.blockranges.SpecialItem;
 import org.bukkit.ChatColor;
+import org.bukkit.Material;
+import org.bukkit.block.Block;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -37,6 +39,19 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
         this.specialItems = specialItems;
     }
 
+    private List<Block> lastBlocks = new ArrayList<>();
+
+    public void restoreBlocks(CommandSender sender) {
+        if(lastBlocks != null) {
+            for(Block block : lastBlocks) {
+                block.setType(Material.STONE);
+            }
+            if(sender != null) {
+                sender.sendMessage("Restored " + lastBlocks.size() + " blocks.");
+            }
+        }
+    }
+
     @Override
     public boolean onCommand(CommandSender commandSender, Command command, String label, String[] args) {
         String[] argsOriginal = args.clone();
@@ -55,12 +70,69 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                         break;
                     }
 
+                    Player player = (Player) commandSender;
+
+                    PreciseVisibleBlocksRaycaster raycaster = new PreciseVisibleBlocksRaycaster();
+//                    Material[] loop = new Material[] {Material.WHITE_STAINED_GLASS, Material.RED_STAINED_GLASS, Material.GREEN_STAINED_GLASS, Material.BLUE_STAINED_GLASS, Material.BLACK_STAINED_GLASS};
+                    Material[] loop = new Material[] {Material.CRACKED_NETHER_BRICKS, Material.NETHER_BRICKS};
+
                     new BukkitRunnable() {
+
+                        int count = 0;
+                        int sneakCount = 0;
+
                         @Override
                         public void run() {
-                            new VisibleBlocksRaycaster().getVisibleBlocks((Player) commandSender);
+                            restoreBlocks(commandSender);
+
+                            List<Block> blocks = raycaster.getVisibleBlocks((Player) commandSender);
+
+                            Material selectedMaterial = loop[count % loop.length];
+                            for(Block block : blocks) {
+                                block.setType(selectedMaterial);
+                            }
+
+                            lastBlocks = blocks;
+
+                            count++;
+
+                            if(player.isSneaking()) {
+                                sneakCount++;
+                            } else {
+                                if(sneakCount != 0) {
+                                    sneakCount = 0;
+                                }
+                            }
+
+                            if(sneakCount >= 6) {
+                                player.sendMessage("Abort raycaster.");
+                                restoreBlocks(player);
+                                cancel();
+                            }
                         }
-                    }.runTaskTimer(plugin, 0, 5L);
+                    }.runTaskTimer(plugin, 0, 2L);
+                    break;
+                case "test1":
+                    if(!(commandSender instanceof Player)) {
+                        commandSender.sendMessage(ChatColor.RED + "You must be a player to execute this command!");
+                        break;
+                    }
+
+                    restoreBlocks(commandSender);
+
+                    loop = new Material[] {Material.WHITE_STAINED_GLASS, Material.RED_STAINED_GLASS, Material.GREEN_STAINED_GLASS, Material.BLUE_STAINED_GLASS, Material.BLACK_STAINED_GLASS};
+
+                    raycaster = new PreciseVisibleBlocksRaycaster();
+                    List<Block> blocks = raycaster.getVisibleBlocks((Player) commandSender);
+                    Material selectedMaterial = loop[(int) (Math.random() * loop.length)];
+                    for(Block block : blocks) {
+                        block.setType(selectedMaterial);
+                    }
+
+                    lastBlocks = blocks;
+                    break;
+                case "testreset":
+                    restoreBlocks(commandSender);
                     break;
                 case "create":
                     if(args.length < 2) {
