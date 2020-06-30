@@ -12,7 +12,16 @@ import org.bukkit.util.Vector;
 import java.util.*;
 
 //revised algorithm that does a BFS on AIR blocks
-//more efficient than last algorithm
+//much more efficient than original "VisibleBlocksRaycaster" algorithm
+/*
+Key features:
+- has a checker to determine if block is in FOV bounds
+- will BFS through AIR blocks to determine visibility
+- will ray cast once to closest face to determine if face is visible to player
+- will stop BFS if air is "abandoned" more than once, ie it has no solid neighbors twice
+- allows for fuzzy raycast hits by checking adjacent blocks in a 3x3 2D range for inaccuracies
+- algorithm can be run async, but modifying blocks must be sync
+ */
 public class PreciseVisibleBlocksRaycaster {
 
     class FOVBounds {
@@ -37,8 +46,10 @@ public class PreciseVisibleBlocksRaycaster {
     }
 
     private static final BlockFace[] ADJACENT_FACES = new BlockFace[] {BlockFace.NORTH, BlockFace.EAST, BlockFace.WEST, BlockFace.SOUTH, BlockFace.UP, BlockFace.DOWN};
-    private static final int MAX_DISTANCE = 16;
-    private static final int MAX_TIMEOUT = 1000;
+//    private static final int MAX_DISTANCE = 16;
+    private static final int MAX_DISTANCE = 24;
+//    private static final int MAX_TIMEOUT = 1000;
+    private static final int MAX_TIMEOUT = 1500;
 
     public List<Block> getVisibleBlocks(Player p) {
         return getVisibleBlocks(p, p.getLineOfSight(null, MAX_DISTANCE));
@@ -59,6 +70,7 @@ public class PreciseVisibleBlocksRaycaster {
 
             HashMap<Block, Block> visitedSolidBlocks = new HashMap<>(); //format: solid block, air block that defines it
             LinkedList<Block> unvisitedAirBlocks = new LinkedList<>();
+            Set<Block> abandonedAirBlocks = new HashSet<>(); //represents air blocks that don't have any adjacent solid blocks; they can try to make connections with solid ground but they cannot expand more air
 
             visitedSolidBlocks.put(lastLineOfSight, airLineOfSight);
             unvisitedAirBlocks.add(airLineOfSight);
@@ -78,6 +90,8 @@ public class PreciseVisibleBlocksRaycaster {
 
                 Block airBlock = unvisitedAirBlocks.poll();
 
+                boolean isAbandonedAir = abandonedAirBlocks.contains(airBlock);
+
                 for (BlockFace face : ADJACENT_FACES) {
                     Block adjacentBlock = airBlock.getRelative(face);
 
@@ -87,6 +101,7 @@ public class PreciseVisibleBlocksRaycaster {
 
                     if (adjacentBlock.getType() == Material.AIR) {
                         //if air, then make sure there is an adjacent block that doesn't already exist in visitedSolidBlocks. then, add to unvisited.
+                        boolean foundAdjacentSolidBlock = false;
                         for (BlockFace adjacentFace : ADJACENT_FACES) {
                             Block adjacentAdjacentBlock = adjacentBlock.getRelative(adjacentFace);
 
@@ -97,8 +112,14 @@ public class PreciseVisibleBlocksRaycaster {
                                 }
 
                                 unvisitedAirBlocks.add(adjacentBlock);
+                                foundAdjacentSolidBlock = true;
                                 break;
                             }
+                        }
+
+                        if(!foundAdjacentSolidBlock && !isAbandonedAir) {
+                            unvisitedAirBlocks.add(adjacentBlock);
+                            abandonedAirBlocks.add(adjacentBlock);
                         }
                     } else {
                         //if not air, then raycast to check visibility. add to visitedSolidBlocks
@@ -112,9 +133,10 @@ public class PreciseVisibleBlocksRaycaster {
             }
 
             //special case: when we look at the top face of a block in isolation, we cannot expand anywhere! must choose ANY other side
-            if(timeout == MAX_TIMEOUT - 1) {
-                return getVisibleBlocks(p, new ArrayList<>(Arrays.asList(lastLineOfSight.getRelative(BlockFace.NORTH), lastLineOfSight)));
-            }
+            //abandoned air blocks supersedes this logic; also this might be causing stackoverflows
+//            if(timeout == MAX_TIMEOUT - 1) {
+//                return getVisibleBlocks(p, new ArrayList<>(Arrays.asList(lastLineOfSight.getRelative(BlockFace.NORTH), lastLineOfSight)));
+//            }
 
             Bukkit.broadcastMessage("Timeout: " + timeout + "/" + MAX_TIMEOUT);
         }
