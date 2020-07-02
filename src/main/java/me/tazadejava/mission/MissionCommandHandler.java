@@ -77,7 +77,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
         }
     }
 
-    private void raycastTest(CommandSender commandSender, boolean restoreAfterEach) {
+    private void raycastTest(CommandSender commandSender, boolean restoreAfterEach, boolean loopRaycast) {
         Player player = (Player) commandSender;
 
         restoreBlocks(player);
@@ -86,7 +86,13 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
         blockPlayer.clear();
 
         PreciseVisibleBlocksRaycaster raycaster = new PreciseVisibleBlocksRaycaster(true);
-        Material[] loop = new Material[] {Material.CRACKED_NETHER_BRICKS, Material.NETHER_BRICKS};
+
+        BlockData defaultMaterial = Bukkit.getServer().createBlockData(Material.GLASS);
+
+        HashMap<Material, BlockData> customMaterials = new HashMap<>();
+
+        customMaterials.put(Material.PRISMARINE, Bukkit.getServer().createBlockData(Material.MAGMA_BLOCK));
+        customMaterials.put(Material.GOLD_BLOCK, Bukkit.getServer().createBlockData(Material.GLOWSTONE));
 
         new BukkitRunnable() {
 
@@ -95,42 +101,51 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
 
             @Override
             public void run() {
-                if(restoreAfterEach) {
+                if (restoreAfterEach) {
                     restoreBlocks(commandSender);
                 }
 
+                long begin = System.currentTimeMillis();
                 Block[] blocks = raycaster.getVisibleBlocks((Player) commandSender, lastBlockState.keySet());
+                Bukkit.broadcastMessage((System.currentTimeMillis() - begin) + " MS to raycast");
 
-                BlockData bricks = Bukkit.getServer().createBlockData(Material.CRACKED_NETHER_BRICKS);
-
-                Material selectedMaterial = loop[count % loop.length];
-                for(Block block : blocks) {
-                    if(excludedTransformations.contains(block.getType())) {
+                for (Block block : blocks) {
+                    if (excludedTransformations.contains(block.getType())) {
                         continue;
                     }
 
                     lastBlockState.put(block.getLocation(), block.getState());
                     blockPlayer.put(block.getLocation(), player);
-                    player.sendBlockChange(block.getLocation(), bricks);
+
+                    if(customMaterials.containsKey(block.getType())) {
+                        player.sendBlockChange(block.getLocation(), customMaterials.get(block.getType()));
+                    } else {
+                        player.sendBlockChange(block.getLocation(), defaultMaterial);
+                    }
                 }
 
                 count++;
 
-                if(player.isSneaking()) {
+                if (player.isSneaking()) {
                     sneakCount++;
                 } else {
-                    if(sneakCount != 0) {
+                    if (sneakCount != 0) {
                         sneakCount = 0;
                     }
                 }
 
-                if(sneakCount >= 6) {
-                    if(restoreAfterEach) {
+                if (sneakCount >= 6) {
+                    if (restoreAfterEach) {
                         restoreBlocks(commandSender);
                         player.sendMessage("Abort raycaster.");
                     } else {
                         player.sendMessage("Abort raycaster. Type in /mission testreset to restore blocks, or perform the test again.");
                     }
+                    cancel();
+                }
+
+                if(!loopRaycast) {
+                    player.sendMessage("Abort raycaster. Type in /mission testreset to restore blocks, or perform the test again.");
                     cancel();
                 }
             }
@@ -150,10 +165,13 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
         } else {
             switch(args[0]) {
                 case "test":
-                    raycastTest(commandSender, false);
+                    raycastTest(commandSender, false, true);
                     break;
                 case "testdiscrete":
-                    raycastTest(commandSender, true);
+                    raycastTest(commandSender, true, true);
+                    break;
+                case "test1":
+                    raycastTest(commandSender, true, false);
                     break;
                 case "testreset":
                     restoreBlocks(commandSender);

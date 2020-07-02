@@ -47,10 +47,17 @@ public class PreciseVisibleBlocksRaycaster {
 
     private BlockFace[] adjacentFaces;
 
+    //high performance, low distance range
 //    private static final int MAX_DISTANCE = 16;
-    private static final int MAX_DISTANCE = 24;
 //    private static final int MAX_TIMEOUT = 1000;
-    private static final int MAX_TIMEOUT = 1500;
+
+    //medium performance, median distance range
+//    private static final int MAX_DISTANCE = 24;
+//    private static final int MAX_TIMEOUT = 1500;
+
+    //worse performance, best distance range
+    private static final int MAX_DISTANCE = 32;
+    private static final int MAX_TIMEOUT = 3000;
 
     private boolean doHyperPrecision;
 
@@ -82,7 +89,6 @@ public class PreciseVisibleBlocksRaycaster {
 
         if(!lineOfSight.isEmpty()) {
             Block lastLineOfSight = lineOfSight.get(lineOfSight.size() - 1);
-            Block airLineOfSight = lineOfSight.get(lineOfSight.size() - 2);
 
             if(lastLineOfSight.getType() == Material.AIR) {
                 return visibleBlocks.toArray(new Block[0]);
@@ -99,8 +105,11 @@ public class PreciseVisibleBlocksRaycaster {
 //                }
 //            }
 
-            visitedSolidBlocks.put(lastLineOfSight, airLineOfSight);
-            unvisitedAirBlocks.add(airLineOfSight);
+            if(lineOfSight.size() > 1) {
+                Block airLineOfSight = lineOfSight.get(lineOfSight.size() - 2);
+                visitedSolidBlocks.put(lastLineOfSight, airLineOfSight);
+                unvisitedAirBlocks.add(airLineOfSight);
+            }
 
             visibleBlocks.add(lineOfSight.get(lineOfSight.size() - 1));
 
@@ -168,13 +177,7 @@ public class PreciseVisibleBlocksRaycaster {
                 }
             }
 
-            //special case: when we look at the top face of a block in isolation, we cannot expand anywhere! must choose ANY other side
-            //abandoned air blocks supersedes this logic; also this might be causing stackoverflows
-//            if(timeout == MAX_TIMEOUT - 1) {
-//                return getVisibleBlocks(p, new ArrayList<>(Arrays.asList(lastLineOfSight.getRelative(BlockFace.NORTH), lastLineOfSight)));
-//            }
-
-            Bukkit.broadcastMessage("Timeout: " + timeout + "/" + MAX_TIMEOUT);
+//            Bukkit.broadcastMessage("Timeout: " + timeout + "/" + MAX_TIMEOUT);
         }
 
         return visibleBlocks.toArray(new Block[0]);
