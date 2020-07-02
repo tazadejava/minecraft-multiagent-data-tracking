@@ -45,32 +45,59 @@ public class PreciseVisibleBlocksRaycaster {
         }
     }
 
-    private static final BlockFace[] ADJACENT_FACES = new BlockFace[] {BlockFace.NORTH, BlockFace.EAST, BlockFace.WEST, BlockFace.SOUTH, BlockFace.UP, BlockFace.DOWN};
+    private BlockFace[] adjacentFaces;
+
 //    private static final int MAX_DISTANCE = 16;
     private static final int MAX_DISTANCE = 24;
 //    private static final int MAX_TIMEOUT = 1000;
     private static final int MAX_TIMEOUT = 1500;
 
-    public List<Block> getVisibleBlocks(Player p) {
-        return getVisibleBlocks(p, p.getLineOfSight(null, MAX_DISTANCE));
+    private boolean doHyperPrecision;
+
+    //if hyperPrecision is enabled, up to 5 raycasts will be sent out instead of one to determine if a block is visible to the player; may be more computationally heavy, but will improve accuracy
+    public PreciseVisibleBlocksRaycaster(boolean doHyperPrecision) {
+        this(doHyperPrecision, true);
     }
 
-    private List<Block> getVisibleBlocks(Player p, List<Block> lineOfSight) {
-        List<Block> visibleBlocks = new ArrayList<>();
+    public PreciseVisibleBlocksRaycaster(boolean doHyperPrecision, boolean considerUpBlocks) {
+        this.doHyperPrecision = doHyperPrecision;
+
+        if(considerUpBlocks) {
+            adjacentFaces = new BlockFace[] {BlockFace.NORTH, BlockFace.EAST, BlockFace.WEST, BlockFace.SOUTH, BlockFace.UP, BlockFace.DOWN};
+        } else {
+            adjacentFaces = new BlockFace[] {BlockFace.NORTH, BlockFace.EAST, BlockFace.WEST, BlockFace.SOUTH, BlockFace.DOWN};
+        }
+    }
+
+    public Block[] getVisibleBlocks(Player p) {
+        return getVisibleBlocks(p, null);
+    }
+
+    public Block[] getVisibleBlocks(Player p, Set<Location> ignoredBlocks) {
+        Set<Block> visibleBlocks = new HashSet<>();
 
         FOVBounds bounds = new FOVBounds(p);
+
+        List<Block> lineOfSight = p.getLineOfSight(null, MAX_DISTANCE);
 
         if(!lineOfSight.isEmpty()) {
             Block lastLineOfSight = lineOfSight.get(lineOfSight.size() - 1);
             Block airLineOfSight = lineOfSight.get(lineOfSight.size() - 2);
 
             if(lastLineOfSight.getType() == Material.AIR) {
-                return visibleBlocks;
+                return visibleBlocks.toArray(new Block[0]);
             }
 
             HashMap<Block, Block> visitedSolidBlocks = new HashMap<>(); //format: solid block, air block that defines it
             LinkedList<Block> unvisitedAirBlocks = new LinkedList<>();
             Set<Block> abandonedAirBlocks = new HashSet<>(); //represents air blocks that don't have any adjacent solid blocks; they can try to make connections with solid ground but they cannot expand more air
+
+            //TODO: this saves computational power but it also makes the raycaster a bit less accurate. maybe figure out a way to fix that
+//            if(ignoredBlocks != null) {
+//                for(Location visitedLoc : ignoredBlocks) {
+//                    visitedSolidBlocks.put(visitedLoc.getBlock(), null);
+//                }
+//            }
 
             visitedSolidBlocks.put(lastLineOfSight, airLineOfSight);
             unvisitedAirBlocks.add(airLineOfSight);
@@ -92,7 +119,7 @@ public class PreciseVisibleBlocksRaycaster {
 
                 boolean isAbandonedAir = abandonedAirBlocks.contains(airBlock);
 
-                for (BlockFace face : ADJACENT_FACES) {
+                for (BlockFace face : adjacentFaces) {
                     Block adjacentBlock = airBlock.getRelative(face);
 
                     if (!bounds.isInBounds(adjacentBlock.getLocation().add(0.5, 0.5, 0.5))) {
@@ -102,12 +129,14 @@ public class PreciseVisibleBlocksRaycaster {
                     if (adjacentBlock.getType() == Material.AIR) {
                         //if air, then make sure there is an adjacent block that doesn't already exist in visitedSolidBlocks. then, add to unvisited.
                         boolean foundAdjacentSolidBlock = false;
-                        for (BlockFace adjacentFace : ADJACENT_FACES) {
+                        for (BlockFace adjacentFace : adjacentFaces) {
                             Block adjacentAdjacentBlock = adjacentBlock.getRelative(adjacentFace);
 
                             if (adjacentAdjacentBlock.getType() != Material.AIR && !visitedSolidBlocks.containsKey(adjacentAdjacentBlock)) {
                                 visitedSolidBlocks.put(adjacentAdjacentBlock, adjacentBlock);
-                                if (raycastHitsBlockFuzzy(p, adjacentFace, adjacentAdjacentBlock)) {
+
+                                boolean raycast = doHyperPrecision ? raycastHitsBlockFuzzyHyperPrecise(p, adjacentFace, adjacentAdjacentBlock) : raycastHitsBlockFuzzy(p, adjacentFace, adjacentAdjacentBlock);
+                                if (raycast) {
                                     visibleBlocks.add(adjacentAdjacentBlock);
                                 }
 
@@ -123,9 +152,16 @@ public class PreciseVisibleBlocksRaycaster {
                         }
                     } else {
                         //if not air, then raycast to check visibility. add to visitedSolidBlocks
+                        //not raycasting twice sometimes doesn't let it get detected, which is probably because of the air block that is touching it
+//                        if(visitedSolidBlocks.containsKey(adjacentBlock)) {
+//                            continue;
+//                        }
+
                         //TODO: raycast to check
                         visitedSolidBlocks.put(adjacentBlock, airBlock);
-                        if (raycastHitsBlockFuzzy(p, face, adjacentBlock)) {
+
+                        boolean raycast = doHyperPrecision ? raycastHitsBlockFuzzyHyperPrecise(p, face, adjacentBlock) : raycastHitsBlockFuzzy(p, face, adjacentBlock);
+                        if (raycast) {
                             visibleBlocks.add(adjacentBlock);
                         }
                     }
@@ -141,7 +177,88 @@ public class PreciseVisibleBlocksRaycaster {
             Bukkit.broadcastMessage("Timeout: " + timeout + "/" + MAX_TIMEOUT);
         }
 
-        return visibleBlocks;
+        return visibleBlocks.toArray(new Block[0]);
+    }
+
+    private boolean raycastHitsBlockFuzzyHyperPrecise(Player p, BlockFace direction, Block targetBlock) {
+        boolean raycastResult = raycastHitsBlockFuzzy(p, direction, targetBlock);
+        if(raycastResult) {
+            return true;
+        }
+
+        //if the fuzzyHit did not reach a result, test instead up to 4 additional raycasts
+
+        double[] additionalRaycastOffsets = null;
+        switch(direction) {
+            case NORTH:
+                additionalRaycastOffsets = new double[] {
+                    0.05, 0.95, 0.95, //top left corner
+                    0.95, 0.95, 0.95, //top right corner
+                    0.05, 0.05, 0.95, //bottom left corner
+                    0.95, 0.05, 0.95 //bottom right corner
+                };
+                break;
+            case SOUTH:
+                additionalRaycastOffsets = new double[] {
+                        0.05, 0.95, 0.05, //top left corner
+                        0.95, 0.95, 0.05, //top right corner
+                        0.05, 0.05, 0.05, //bottom left corner
+                        0.95, 0.05, 0.05 //bottom right corner
+                };
+                break;
+            case WEST:
+                additionalRaycastOffsets = new double[] {
+                        0.95, 0.95, 0.05, //top left corner
+                        0.95, 0.95, 0.95, //top right corner
+                        0.95, 0.05, 0.05, //bottom left corner
+                        0.95, 0.05, 0.95 //bottom right corner
+                };
+                break;
+            case EAST:
+                additionalRaycastOffsets = new double[] {
+                        0.05, 0.95, 0.05, //top left corner
+                        0.05, 0.95, 0.95, //top right corner
+                        0.05, 0.05, 0.05, //bottom left corner
+                        0.05, 0.05, 0.95 //bottom right corner
+                };
+                break;
+            case DOWN:
+                additionalRaycastOffsets = new double[] {
+                        0.05, 0.95, 0.05, //closest corner
+                        0.05, 0.95, 0.95, //corner on z
+                        0.95, 0.95, 0.95, //corner on z and x
+                        0.95, 0.95, 0.05 //corner on x
+                };
+                break;
+            case UP:
+                additionalRaycastOffsets = new double[] {
+                        0.05, 0.05, 0.05, //closest corner
+                        0.05, 0.05, 0.95, //corner on z
+                        0.95, 0.05, 0.95, //corner on z and x
+                        0.95, 0.05, 0.05 //corner on x
+                };
+                break;
+        }
+
+        for(int i = 0; i < 4; i++) {
+            Location targetBlockFace = targetBlock.getLocation().add(additionalRaycastOffsets[i * 3], additionalRaycastOffsets[i * 3 + 1], additionalRaycastOffsets[i * 3 + 2]);
+
+            RayTraceResult rayTrace = p.getWorld().rayTraceBlocks(p.getEyeLocation(), targetBlockFace.toVector().subtract(p.getEyeLocation().toVector()), MAX_DISTANCE);
+
+            if(rayTrace == null) {
+                continue;
+            }
+
+            if(rayTrace.getHitBlock().equals(targetBlock)) {
+                return true;
+            }
+
+            if(checkFuzzyForTargetBlock(rayTrace.getHitBlock(), targetBlock, direction)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private boolean raycastHitsBlockFuzzy(Player p, BlockFace direction, Block targetBlock) {
@@ -182,6 +299,10 @@ public class PreciseVisibleBlocksRaycaster {
             return true;
         }
 
+        return checkFuzzyForTargetBlock(rayTrace.getHitBlock(), targetBlock, direction);
+    }
+
+    private boolean checkFuzzyForTargetBlock(Block raytraceBlock, Block targetBlock, BlockFace direction) {
         switch(direction) {
             case NORTH:
             case SOUTH:
@@ -191,7 +312,7 @@ public class PreciseVisibleBlocksRaycaster {
                             continue;
                         }
 
-                        Block adjacentBlock = targetBlock.getLocation().add(dx, dy, 0).getBlock();
+                        Block adjacentBlock = raytraceBlock.getLocation().add(dx, dy, 0).getBlock();
 
                         if(adjacentBlock.equals(targetBlock)) {
                             return true;
@@ -207,7 +328,7 @@ public class PreciseVisibleBlocksRaycaster {
                             continue;
                         }
 
-                        Block adjacentBlock = targetBlock.getLocation().add(dx, 0, dz).getBlock();
+                        Block adjacentBlock = raytraceBlock.getLocation().add(dx, 0, dz).getBlock();
 
                         if(adjacentBlock.equals(targetBlock)) {
                             return true;
@@ -223,7 +344,7 @@ public class PreciseVisibleBlocksRaycaster {
                             continue;
                         }
 
-                        Block adjacentBlock = targetBlock.getLocation().add(0, dy, dz).getBlock();
+                        Block adjacentBlock = raytraceBlock.getLocation().add(0, dy, dz).getBlock();
 
                         if(adjacentBlock.equals(targetBlock)) {
                             return true;

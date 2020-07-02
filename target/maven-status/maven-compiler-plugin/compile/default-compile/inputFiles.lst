@@ -7,6 +7,7 @@
 /home/yoshi/Documents/GenesisUROP/ActionTrackerPlugin/src/main/java/me/tazadejava/blockranges/SpecialItemEventListener.java
 /home/yoshi/Documents/GenesisUROP/ActionTrackerPlugin/src/main/java/me/tazadejava/mission/StreamlinedStatsTracker.java
 /home/yoshi/Documents/GenesisUROP/ActionTrackerPlugin/src/main/java/me/tazadejava/blockranges/BlockRange2D.java
+/home/yoshi/Documents/GenesisUROP/ActionTrackerPlugin/src/main/java/me/tazadejava/mission/PreciseVisibleBlocksRaycaster.java
 /home/yoshi/Documents/GenesisUROP/ActionTrackerPlugin/src/main/java/me/tazadejava/analyzer/PlayerAnalyzer.java
 /home/yoshi/Documents/GenesisUROP/ActionTrackerPlugin/src/main/java/me/tazadejava/mission/StatsTracker.java
 /home/yoshi/Documents/GenesisUROP/ActionTrackerPlugin/src/main/java/me/tazadejava/actiontracker/ActionTrackerPlugin.java

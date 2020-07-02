@@ -24,6 +24,7 @@ import java.util.Set;
 
 //get the blocks that the player can see
 //inspired by algorithm that Essie wrote in python
+@Deprecated
 public class VisibleBlocksRaycaster {
 
     class RaycastBounds {

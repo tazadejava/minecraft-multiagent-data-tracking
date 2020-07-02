@@ -5,9 +5,13 @@ import me.tazadejava.actiontracker.Utils;
 import me.tazadejava.blockranges.BlockRange2D;
 import me.tazadejava.blockranges.SelectionWand;
 import me.tazadejava.blockranges.SpecialItem;
+import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockState;
+import org.bukkit.block.data.BlockData;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -17,12 +21,7 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.StringUtil;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
+import java.util.*;
 
 //handles the player's commands to pass to the MissionHandler class
 public class MissionCommandHandler implements CommandExecutor, TabCompleter {
@@ -33,23 +32,109 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
     private final MissionHandler missionHandler;
     private final HashMap<String, SpecialItem> specialItems;
 
+    private HashMap<Location, BlockState> lastBlockState = new HashMap<>();
+    private HashMap<Location, Player> blockPlayer = new HashMap<>();
+    private Set<Material> excludedTransformations = new HashSet<>();
+
     public MissionCommandHandler(ActionTrackerPlugin plugin, MissionHandler missionHandler, HashMap<String, SpecialItem> specialItems) {
         this.plugin = plugin;
         this.missionHandler = missionHandler;
         this.specialItems = specialItems;
+
+        defineExcludedTransformations();
     }
 
-    private List<Block> lastBlocks = new ArrayList<>();
+    private void defineExcludedTransformations() {
+        excludedTransformations.add(Material.ACACIA_DOOR);
+        excludedTransformations.add(Material.OAK_DOOR);
+        excludedTransformations.add(Material.REDSTONE_TORCH);
+        excludedTransformations.add(Material.REDSTONE);
+        excludedTransformations.add(Material.REPEATER);
+        excludedTransformations.add(Material.COMPARATOR);
+        excludedTransformations.add(Material.CHEST);
+        excludedTransformations.add(Material.ENDER_CHEST);
+        excludedTransformations.add(Material.LEVER);
+        excludedTransformations.add(Material.STONE_BUTTON);
+        excludedTransformations.add(Material.TRIPWIRE_HOOK);
+        excludedTransformations.add(Material.OAK_SIGN);
+        excludedTransformations.add(Material.OAK_WALL_SIGN);
+    }
 
     public void restoreBlocks(CommandSender sender) {
-        if(lastBlocks != null) {
-            for(Block block : lastBlocks) {
-                block.setType(Material.STONE);
+        if(!lastBlockState.isEmpty()) {
+            for(Location loc : lastBlockState.keySet()) {
+                Block block = loc.getBlock();
+                BlockState state = lastBlockState.get(loc);
+
+                blockPlayer.get(block.getLocation()).sendBlockChange(block.getLocation(), state.getBlockData());
             }
             if(sender != null) {
-                sender.sendMessage("Restored " + lastBlocks.size() + " blocks.");
+                sender.sendMessage("Restored " + lastBlockState.size() + " blocks.");
             }
+
+            lastBlockState.clear();
+            blockPlayer.clear();
         }
+    }
+
+    private void raycastTest(CommandSender commandSender, boolean restoreAfterEach) {
+        Player player = (Player) commandSender;
+
+        restoreBlocks(player);
+
+        lastBlockState.clear();
+        blockPlayer.clear();
+
+        PreciseVisibleBlocksRaycaster raycaster = new PreciseVisibleBlocksRaycaster(true);
+        Material[] loop = new Material[] {Material.CRACKED_NETHER_BRICKS, Material.NETHER_BRICKS};
+
+        new BukkitRunnable() {
+
+            int count = 0;
+            int sneakCount = 0;
+
+            @Override
+            public void run() {
+                if(restoreAfterEach) {
+                    restoreBlocks(commandSender);
+                }
+
+                Block[] blocks = raycaster.getVisibleBlocks((Player) commandSender, lastBlockState.keySet());
+
+                BlockData bricks = Bukkit.getServer().createBlockData(Material.CRACKED_NETHER_BRICKS);
+
+                Material selectedMaterial = loop[count % loop.length];
+                for(Block block : blocks) {
+                    if(excludedTransformations.contains(block.getType())) {
+                        continue;
+                    }
+
+                    lastBlockState.put(block.getLocation(), block.getState());
+                    blockPlayer.put(block.getLocation(), player);
+                    player.sendBlockChange(block.getLocation(), bricks);
+                }
+
+                count++;
+
+                if(player.isSneaking()) {
+                    sneakCount++;
+                } else {
+                    if(sneakCount != 0) {
+                        sneakCount = 0;
+                    }
+                }
+
+                if(sneakCount >= 6) {
+                    if(restoreAfterEach) {
+                        restoreBlocks(commandSender);
+                        player.sendMessage("Abort raycaster.");
+                    } else {
+                        player.sendMessage("Abort raycaster. Type in /mission testreset to restore blocks, or perform the test again.");
+                    }
+                    cancel();
+                }
+            }
+        }.runTaskTimer(plugin, 0, 4L);
     }
 
     @Override
@@ -65,71 +150,10 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
         } else {
             switch(args[0]) {
                 case "test":
-                    if(!(commandSender instanceof Player)) {
-                        commandSender.sendMessage(ChatColor.RED + "You must be a player to execute this command!");
-                        break;
-                    }
-
-                    Player player = (Player) commandSender;
-
-                    PreciseVisibleBlocksRaycaster raycaster = new PreciseVisibleBlocksRaycaster();
-//                    Material[] loop = new Material[] {Material.WHITE_STAINED_GLASS, Material.RED_STAINED_GLASS, Material.GREEN_STAINED_GLASS, Material.BLUE_STAINED_GLASS, Material.BLACK_STAINED_GLASS};
-                    Material[] loop = new Material[] {Material.CRACKED_NETHER_BRICKS, Material.NETHER_BRICKS};
-
-                    new BukkitRunnable() {
-
-                        int count = 0;
-                        int sneakCount = 0;
-
-                        @Override
-                        public void run() {
-                            restoreBlocks(commandSender);
-
-                            List<Block> blocks = raycaster.getVisibleBlocks((Player) commandSender);
-
-                            Material selectedMaterial = loop[count % loop.length];
-                            for(Block block : blocks) {
-                                block.setType(selectedMaterial);
-                            }
-
-                            lastBlocks = blocks;
-
-                            count++;
-
-                            if(player.isSneaking()) {
-                                sneakCount++;
-                            } else {
-                                if(sneakCount != 0) {
-                                    sneakCount = 0;
-                                }
-                            }
-
-                            if(sneakCount >= 6) {
-                                player.sendMessage("Abort raycaster.");
-                                restoreBlocks(player);
-                                cancel();
-                            }
-                        }
-                    }.runTaskTimer(plugin, 0, 2L);
+                    raycastTest(commandSender, false);
                     break;
-                case "test1":
-                    if(!(commandSender instanceof Player)) {
-                        commandSender.sendMessage(ChatColor.RED + "You must be a player to execute this command!");
-                        break;
-                    }
-
-                    restoreBlocks(commandSender);
-
-                    loop = new Material[] {Material.WHITE_STAINED_GLASS, Material.RED_STAINED_GLASS, Material.GREEN_STAINED_GLASS, Material.BLUE_STAINED_GLASS, Material.BLACK_STAINED_GLASS};
-
-                    raycaster = new PreciseVisibleBlocksRaycaster();
-                    List<Block> blocks = raycaster.getVisibleBlocks((Player) commandSender);
-                    Material selectedMaterial = loop[(int) (Math.random() * loop.length)];
-                    for(Block block : blocks) {
-                        block.setType(selectedMaterial);
-                    }
-
-                    lastBlocks = blocks;
+                case "testdiscrete":
+                    raycastTest(commandSender, true);
                     break;
                 case "testreset":
                     restoreBlocks(commandSender);
