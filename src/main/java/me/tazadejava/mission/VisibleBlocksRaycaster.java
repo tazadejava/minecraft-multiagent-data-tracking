@@ -2,28 +2,18 @@ package me.tazadejava.mission;
 
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
-import org.bukkit.FluidCollisionMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.util.BlockIterator;
-import org.bukkit.util.RayTraceResult;
 import org.bukkit.util.Vector;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
 //get the blocks that the player can see
 //inspired by algorithm that Essie wrote in python
+//OUTDATED, since it uses a rough draft algorithm that is quite computationally intensive and also does not capture all blocks
 @Deprecated
 public class VisibleBlocksRaycaster {
 

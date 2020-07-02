@@ -163,17 +163,17 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
         if(args.length == 0) {
             commandSender.sendMessage(GENERIC_IMPROPER_COMMAND_MESSAGE);
         } else {
-            switch(args[0]) {
-                case "test":
+            switch(args[0].toLowerCase()) {
+                case "raycast": //this will draw a continuous raycast to all visible blocks.
                     raycastTest(commandSender, false, true);
                     break;
-                case "testdiscrete":
+                case "raycastdiscrete": //this will raycast, but will reset the raycasted before raycasting again. may flicker, watch out.
                     raycastTest(commandSender, true, true);
                     break;
-                case "test1":
+                case "raycastonce": //raycast once only
                     raycastTest(commandSender, true, false);
                     break;
-                case "testreset":
+                case "raycastreset": //resets the blocks that are converted to glass
                     restoreBlocks(commandSender);
                     break;
                 case "create":
