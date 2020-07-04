@@ -45,18 +45,18 @@ public class SelectionWand extends SpecialItem {
                 int[] x = range.getRangeX();
                 int[] z = range.getRangeZ();
                 event.getPlayer().sendMessage(ChatColor.GRAY + "A block range has been calculated: from (" + x[0] + ", " + z[0] + ") to (" + x[1] + ", " + z[1] + ").");
-
-                showPlayerRange(x, z);
             }
         }
     }
 
-    private void showPlayerRange(int[] x, int[] z) {
-        //TODO: show range in stained glass or some indication, client side block
-    }
-
     public BlockRange2D getPlayerSelection(Player p) {
         return selections.getOrDefault(p, null);
+    }
+
+    public void clearPlayerSelection(Player p) {
+        if (selections.containsKey(p)) {
+            selections.remove(p);
+        }
     }
 
     @Override

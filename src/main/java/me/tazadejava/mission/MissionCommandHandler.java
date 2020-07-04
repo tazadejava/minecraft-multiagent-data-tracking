@@ -1,10 +1,15 @@
 package me.tazadejava.mission;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 import me.tazadejava.actiontracker.ActionTrackerPlugin;
 import me.tazadejava.actiontracker.Utils;
 import me.tazadejava.blockranges.BlockRange2D;
 import me.tazadejava.blockranges.SelectionWand;
 import me.tazadejava.blockranges.SpecialItem;
+import me.tazadejava.statstracker.PreciseVisibleBlocksRaycaster;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
@@ -21,6 +26,9 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.StringUtil;
 
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.*;
 
 //handles the player's commands to pass to the MissionHandler class
@@ -29,16 +37,20 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
     private static final String GENERIC_IMPROPER_COMMAND_MESSAGE = "Improper command. Usage: /mission <create/start/abort/list/set/add/getitem> [command-specific arguments]";
 
     private final ActionTrackerPlugin plugin;
-    private final MissionHandler missionHandler;
+    private final MissionManager missionManager;
     private final HashMap<String, SpecialItem> specialItems;
 
     private HashMap<Location, BlockState> lastBlockState = new HashMap<>();
     private HashMap<Location, Player> blockPlayer = new HashMap<>();
     private Set<Material> excludedTransformations = new HashSet<>();
 
-    public MissionCommandHandler(ActionTrackerPlugin plugin, MissionHandler missionHandler, HashMap<String, SpecialItem> specialItems) {
+    private HashMap<Player, MissionRoom> roomBuilderRooms = new HashMap<>();
+    private HashMap<Player, Mission> roomBuilderMissions = new HashMap<>();
+    private HashMap<Player, int[]> roomBuilderRaycastYBounds = new HashMap<>();
+
+    public MissionCommandHandler(ActionTrackerPlugin plugin, MissionManager missionManager, HashMap<String, SpecialItem> specialItems) {
         this.plugin = plugin;
-        this.missionHandler = missionHandler;
+        this.missionManager = missionManager;
         this.specialItems = specialItems;
 
         defineExcludedTransformations();
@@ -77,6 +89,86 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
         }
     }
 
+    public void saveBlocks(CommandSender sender) {
+        if(!lastBlockState.isEmpty()) {
+            Gson gson = new GsonBuilder().setPrettyPrinting().create();
+
+            JsonObject mainObjectLocs = new JsonObject();
+            JsonObject mainObjectIndices = new JsonObject();
+
+            JsonObject blockMapping = new JsonObject();
+
+            mainObjectLocs.addProperty("missionName", "Test");
+            mainObjectIndices.addProperty("missionName", "Test");
+
+            JsonArray visibleBlocks = new JsonArray();
+            JsonArray visibleBlocksIndices = new JsonArray();
+            int index = 0;
+            for(Location loc : lastBlockState.keySet()) {
+                Block block = loc.getBlock();
+                BlockState state = lastBlockState.get(loc);
+
+                blockPlayer.get(block.getLocation()).sendBlockChange(block.getLocation(), state.getBlockData());
+
+                String locString = block.getLocation().getBlockX() + " " + block.getLocation().getBlockY() + " " + block.getLocation().getBlockZ();
+                visibleBlocks.add(locString);
+
+                if(index == 0) {
+                    blockMapping.addProperty("world", loc.getWorld().getName());
+                }
+
+                blockMapping.addProperty(locString, index);
+                visibleBlocksIndices.add(index);
+                index++;
+            }
+
+            mainObjectLocs.add("visibleBlocks", visibleBlocks);
+            mainObjectIndices.add("visibleBlocks", visibleBlocksIndices);
+
+            try {
+                File saveFolder = new File(plugin.getDataFolder() + "/raycasts/");
+                if(!saveFolder.exists()){
+                    saveFolder.mkdir();
+                }
+
+                File saveFile = new File(plugin.getDataFolder() + "/raycasts/savetestLocs.json");
+                if(!saveFile.exists()) {
+                    saveFile.createNewFile();
+                }
+
+                FileWriter fileWriter = new FileWriter(saveFile);
+                gson.toJson(mainObjectLocs, fileWriter);
+                fileWriter.close();
+
+                //save again for indices this time
+
+                saveFile = new File(plugin.getDataFolder() + "/raycasts/savetestIndices.json");
+                if(!saveFile.exists()) {
+                    saveFile.createNewFile();
+                }
+
+                fileWriter = new FileWriter(saveFile);
+                gson.toJson(mainObjectIndices, fileWriter);
+                fileWriter.close();
+
+                //save again for mapping this time
+
+                saveFile = new File(plugin.getDataFolder() + "/raycasts/indexMapping.json");
+                if(!saveFile.exists()) {
+                    saveFile.createNewFile();
+                }
+
+                fileWriter = new FileWriter(saveFile);
+                gson.toJson(blockMapping, fileWriter);
+                fileWriter.close();
+
+                sender.sendMessage("Saved the files!");
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
     private void raycastTest(CommandSender commandSender, boolean restoreAfterEach, boolean loopRaycast) {
         Player player = (Player) commandSender;
 
@@ -85,7 +177,8 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
         lastBlockState.clear();
         blockPlayer.clear();
 
-        PreciseVisibleBlocksRaycaster raycaster = new PreciseVisibleBlocksRaycaster(true);
+        PreciseVisibleBlocksRaycaster raycaster = new PreciseVisibleBlocksRaycaster(true, true, true, 52, 53);
+//        PreciseVisibleBlocksRaycaster raycaster = new PreciseVisibleBlocksRaycaster(true, true, 0, 255);
 
         BlockData defaultMaterial = Bukkit.getServer().createBlockData(Material.GLASS);
 
@@ -173,6 +266,9 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                 case "raycastonce": //raycast once only
                     raycastTest(commandSender, true, false);
                     break;
+                case "raycastsave": //saves the current viewed blocks to JSON file
+                    saveBlocks(commandSender);
+                    break;
                 case "raycastreset": //resets the blocks that are converted to glass
                     restoreBlocks(commandSender);
                     break;
@@ -182,8 +278,8 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                         break;
                     }
 
-                    if(missionHandler.createMission(argsOriginal[1])) {
-                        Mission mission = missionHandler.getMission(args[1]);
+                    if(missionManager.createMission(argsOriginal[1])) {
+                        Mission mission = missionManager.getMission(args[1]);
                         commandSender.sendMessage(ChatColor.GREEN + "Created the mission!");
                         sendMissionCompletionProgress(commandSender, mission);
                     } else {
@@ -191,7 +287,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                     }
                     break;
                 case "list":
-                    Collection<Mission> missions = missionHandler.getAllMissions();
+                    Collection<Mission> missions = missionManager.getAllMissions();
                     if(missions == null) {
                         commandSender.sendMessage(ChatColor.RED + "There are no missions.");
                         break;
@@ -207,14 +303,14 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                         commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission set <mission name> <duration/location> [additional arguments]");
                         break;
                     }
-                    if(!missionHandler.doesMissionExist(args[1])) {
+                    if(!missionManager.doesMissionExist(args[1])) {
                         commandSender.sendMessage(ChatColor.RED + "A command with that name does not exist!");
                         break;
                     }
 
-                    Mission mission = missionHandler.getMission(args[1]);
+                    Mission mission = missionManager.getMission(args[1]);
 
-                    if(missionHandler.isMissionInProgress(mission)) {
+                    if(missionManager.isMissionInProgress(mission)) {
                         commandSender.sendMessage(ChatColor.RED + "That mission is currently in progress! You cannot modify an ongoing mission.");
                         break;
                     }
@@ -234,7 +330,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                             mission.setDuration(Integer.parseInt(args[3]));
                             commandSender.sendMessage(ChatColor.GREEN + "Set mission duration to " + args[3] + " seconds!");
                             sendMissionCompletionProgress(commandSender, mission);
-                            missionHandler.saveData();
+                            missionManager.saveData();
                             break;
                         case "location":
                             if(!(commandSender instanceof Player)) {
@@ -247,7 +343,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                             mission.setPlayerSpawnLocation(p.getLocation());
                             commandSender.sendMessage(ChatColor.GREEN + "Set the current location as the mission spawn point!");
                             sendMissionCompletionProgress(commandSender, mission);
-                            missionHandler.saveData();
+                            missionManager.saveData();
                             break;
                         default:
                             commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission set <mission name> <duration/location> [additional arguments]");
@@ -259,12 +355,12 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                         commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission start <mission name>");
                         break;
                     }
-                    if(!missionHandler.doesMissionExist(args[1])) {
+                    if(!missionManager.doesMissionExist(args[1])) {
                         commandSender.sendMessage(ChatColor.RED + "That mission does not exist!");
                         break;
                     }
 
-                    mission = missionHandler.getMission(args[1]);
+                    mission = missionManager.getMission(args[1]);
 
                     if(!mission.canRunMission()) {
                         commandSender.sendMessage(ChatColor.RED + "You cannot yet run this mission!");
@@ -272,43 +368,108 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                         break;
                     }
 
-                    if(missionHandler.startMission(commandSender, mission)) {
+                    if(missionManager.startMission(commandSender, mission)) {
                         commandSender.sendMessage(ChatColor.GREEN + "Mission started with " + mission.getDuration() + " seconds. Data is now being tracked.");
                     } else {
                         commandSender.sendMessage(ChatColor.RED + "A mission is already in progress!");
                     }
                     break;
                 case "abort":
-                    if(missionHandler.abortMission()) {
+                    if(missionManager.abortMission()) {
                         commandSender.sendMessage(ChatColor.RED + "Mission aborted. A log was not saved.");
                     } else {
                         commandSender.sendMessage(ChatColor.RED + "No mission is currently in progress!");
                     }
                     break;
-                case "add":
+                case "room":
                     if(!(commandSender instanceof Player)) {
                         commandSender.sendMessage(ChatColor.RED + "You must be a player to execute this command!");
-                        break;
-                    }
-                    if(args.length < 3) {
-                        commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission add <mission name> <room> [command-specific arguments]");
                         break;
                     }
 
                     Player p = (Player) commandSender;
 
+                    //room builder mode specific arguments
+                    if(roomBuilderRooms.containsKey(p)) {
+                        boolean captured = true;
+                        switch(args[1].toLowerCase()) {
+                            case "raycast":
+                                p.sendMessage("Began scanning visible blocks within the room boundaries. To end raycasting, type in /mission room save or /mission room cancel");
+                                roomBuilderRooms.get(p).beginScanningRoomBlocks(plugin, p, roomBuilderRaycastYBounds.get(p)[0], roomBuilderRaycastYBounds.get(p)[1]);
+                                break;
+                            case "cancel":
+                                p.sendMessage(ChatColor.RED + "You cancelled the room builder.");
+
+                                roomBuilderRooms.get(p).endScanningRoomBlocks(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        roomBuilderRooms.remove(p);
+                                        roomBuilderMissions.remove(p);
+                                    }
+                                });
+                                break;
+                            case "save":
+                                roomBuilderRooms.get(p).endScanningRoomBlocks(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        roomBuilderMissions.get(p).addRoom(roomBuilderRooms.get(p));
+                                        p.sendMessage(ChatColor.GREEN + "You created a new room named " + roomBuilderRooms.get(p).getRoomName() + " for mission " + roomBuilderMissions.get(p).getMissionName() + "!");
+                                        p.sendMessage(ChatColor.GRAY + "Exited room builder mode.");
+
+                                        roomBuilderRooms.remove(p);
+                                        roomBuilderMissions.remove(p);
+
+                                        missionManager.saveData();
+                                    }
+                                });
+                                break;
+                            case "setybounds":
+                                if(args.length < 4) {
+                                    commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission room setybounds <lower y bound> <upper y bound>");
+                                    break;
+                                }
+                                if(!Utils.isInteger(args[2]) || !Utils.isInteger(args[3])) {
+                                    commandSender.sendMessage(ChatColor.RED + "Improper command. The bounds must be integers. Usage: /mission room setybounds <lower y bound> <upper y bound>");
+                                    break;
+                                }
+
+                                int lowerBound = Integer.parseInt(args[2]);
+                                int upperBound = Integer.parseInt(args[3]);
+
+                                if(lowerBound > upperBound) {
+                                    commandSender.sendMessage(ChatColor.RED + "The lower bound must be less than or equal to the upper bound!");
+                                    break;
+                                }
+
+                                roomBuilderRaycastYBounds.put(p, new int[] {lowerBound, upperBound});
+                                commandSender.sendMessage("Set the current y bounds from " + lowerBound + " to " + upperBound + ".");
+                                break;
+                            default:
+                                captured = false;
+                        }
+
+                        if(captured) {
+                            break;
+                        }
+                    }
+
+                    if(args.length < 3) {
+                        commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission room <mission name> <create> [command-specific arguments]");
+                        break;
+                    }
+
                     switch(args[2].toLowerCase()) {
-                        case "room":
+                        case "create":
                             if(args.length < 4) {
-                                commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission add <mission name> room <room name>");
+                                commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission room <mission name> create <room name>");
                                 break;
                             }
-                            if(!missionHandler.doesMissionExist(args[1])) {
+                            if(!missionManager.doesMissionExist(args[1])) {
                                 commandSender.sendMessage(ChatColor.RED + "That mission does not exist!");
                                 break;
                             }
 
-                            mission = missionHandler.getMission(args[1]);
+                            mission = missionManager.getMission(args[1]);
 
                             String roomName = args[3].toLowerCase();
                             if(mission.hasRoom(roomName)) {
@@ -320,16 +481,33 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                             BlockRange2D range = wand.getPlayerSelection(p);
 
                             if(range == null || !range.isRangeCalculated()) {
-                                commandSender.sendMessage(ChatColor.RED + "You must first specify room bounds before defining a room! See: " + ChatColor.GRAY + "/mission getitem wand" + ChatColor.RED + ".");
+                                commandSender.sendMessage(ChatColor.RED + "You must first specify room bounds (not including walls) before defining a room! See: " + ChatColor.GRAY + "/mission getitem wand" + ChatColor.RED + ".");
                                 break;
                             }
 
-                            mission.addRoom(roomName, range);
-                            commandSender.sendMessage("A room has been added to the mission!");
-                            missionHandler.saveData();
+                            //expand bounds by one to account for walls
+                            range.expand(1);
+
+                            if(roomBuilderRooms.containsKey(p)) {
+                                p.sendMessage(ChatColor.RED + "You have discarded your previous room build.");
+                            }
+
+                            roomBuilderRooms.put(p, new MissionRoom(roomName, range));
+                            roomBuilderMissions.put(p, mission);
+
+                            if(!roomBuilderRaycastYBounds.containsKey(p)) {
+                                roomBuilderRaycastYBounds.put(p, new int[]{0, 255});
+                            }
+
+                            wand.clearPlayerSelection(p);
+
+                            commandSender.sendMessage(ChatColor.GREEN + "You have entered room builder mode for room " + roomName + ". First, enter the room, then call "+ ChatColor.GRAY + "/mission room raycast" + ChatColor.GREEN + " to begin scanning the blocks within the room.");
+                            commandSender.sendMessage(ChatColor.GRAY + "You may want to define room y bounds via /mission room setybounds <lower bound> <upper bound>! The current bounds are from " + roomBuilderRaycastYBounds.get(p)[0] + " to " + roomBuilderRaycastYBounds.get(p)[1] + ".");
+
+                            missionManager.saveData();
                             break;
                         default:
-                            commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission add <mission name> <room> [command-specific arguments]");
+                            commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission room <mission name> <create> [command-specific arguments]");
                             break;
                     }
                     break;
@@ -365,7 +543,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
     }
 
     private void sendMissionCompletionProgress(CommandSender sender, Mission mission) {
-        sender.sendMessage(ChatColor.BLUE + "Progress for mission " + ChatColor.GOLD + mission.getMissionName() + ChatColor.BLUE + ":");
+        sender.sendMessage("" + ChatColor.BLUE + ChatColor.UNDERLINE + "Progress for mission " + ChatColor.GOLD + ChatColor.UNDERLINE + mission.getMissionName() + ChatColor.BLUE + ChatColor.UNDERLINE + ":");
 
         if(mission.hasDuration()) {
             sender.sendMessage(ChatColor.GREEN + "- Duration: " + mission.getDuration() + " seconds");
@@ -380,7 +558,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
         }
 
         if(mission.canRunMission()) {
-            sender.sendMessage(ChatColor.GREEN + "- Can run mission: yes!");
+            sender.sendMessage(ChatColor.GREEN + "- Can run mission: yes! (" + ChatColor.LIGHT_PURPLE + "/mission start " + mission.getMissionName() + ChatColor.GREEN + ")");
         } else {
             sender.sendMessage(ChatColor.RED + "- Can run mission: no!");
         }
@@ -391,7 +569,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
         switch(args.length) {
             case 1:
                 List<String> completions = new ArrayList<>();
-                StringUtil.copyPartialMatches(args[0], Arrays.asList("create", "start", "abort", "list", "set", "getitem", "add"), completions);
+                StringUtil.copyPartialMatches(args[0], Arrays.asList("create", "start", "abort", "list", "set", "getitem", "room"), completions);
                 Collections.sort(completions);
 
                 return completions;
@@ -403,18 +581,30 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                         return new ArrayList<>();
                     case "start":
                     case "set":
-                    case "add":
                         completions = new ArrayList<>();
 
-                        for(Mission mission : missionHandler.getAllMissions()) {
+                        for(Mission mission : missionManager.getAllMissions()) {
                             completions.add(mission.getMissionName());
                         }
 
                         return completions;
                     case "getitem":
                         completions = new ArrayList<>(specialItems.keySet());
-
                         return completions;
+                    case "room":
+                        if(roomBuilderRooms.containsKey(sender)) {
+                            completions = new ArrayList<>();
+                            StringUtil.copyPartialMatches(args[1], Arrays.asList("raycast", "cancel", "setybounds", "save"), completions);
+                            Collections.sort(completions);
+
+                            return completions;
+                        } else {
+                            completions = new ArrayList<>();
+                            for(Mission mission : missionManager.getAllMissions()) {
+                                completions.add(mission.getMissionName());
+                            }
+                            return completions;
+                        }
                     default:
                         return null;
                 }
@@ -422,13 +612,29 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                 switch(args[0].toLowerCase()) {
                     case "set":
                         completions = new ArrayList<>();
-                        StringUtil.copyPartialMatches(args[0], Arrays.asList("duration", "location"), completions);
+                        StringUtil.copyPartialMatches(args[2], Arrays.asList("duration", "location"), completions);
+
                         return completions;
-                    case "add":
-                        return new ArrayList<>(Arrays.asList("room"));
+                    case "room":
+                        if(!roomBuilderRooms.containsKey(sender)) {
+                            return new ArrayList<>(Arrays.asList("create"));
+                        } else {
+                            return null;
+                        }
                     default:
                         return null;
                 }
+//            case 4:
+//                switch(args[0].toLowerCase()) {
+//                    case "room":
+//                        if(!roomBuilderRooms.containsKey(sender)) {
+//                            return new ArrayList<>(Arrays.asList("create"));
+//                        } else {
+//                            return null;
+//                        }
+//                    default:
+//                        return null;
+//                }
             default:
                 return null;
         }

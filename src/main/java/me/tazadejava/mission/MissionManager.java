@@ -6,6 +6,9 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.stream.JsonReader;
 import me.tazadejava.analyzer.PlayerAnalyzer;
+import me.tazadejava.statstracker.EnhancedStatsTracker;
+import me.tazadejava.statstracker.StatsTracker;
+import me.tazadejava.statstracker.StreamlinedStatsTracker;
 import org.bukkit.Bukkit;
 import org.bukkit.boss.BarColor;
 import org.bukkit.boss.BarStyle;
@@ -26,7 +29,7 @@ import java.util.List;
 import java.util.Map;
 
 //handles the mission data tracking
-public class MissionHandler {
+public class MissionManager {
 
     private JavaPlugin plugin;
     private MissionEventListener listener;
@@ -45,7 +48,7 @@ public class MissionHandler {
 
     private BossBar countdown;
 
-    public MissionHandler(JavaPlugin plugin, MissionEventListener listener) {
+    public MissionManager(JavaPlugin plugin, MissionEventListener listener) {
         this.plugin = plugin;
         this.listener = listener;
 
@@ -75,7 +78,7 @@ public class MissionHandler {
 
             for(Map.Entry<String, JsonElement> entry : object.entrySet()) {
                 String id = entry.getKey();
-                Mission mission = new Mission(id, object.getAsJsonObject(id));
+                Mission mission = new Mission(id, plugin.getDataFolder(), gson, object.getAsJsonObject(id));
                 missions.put(mission.getMissionName().toLowerCase(), mission);
             }
 
@@ -88,7 +91,7 @@ public class MissionHandler {
     public void saveData() {
         JsonObject head = new JsonObject();
         for(Mission mission : missions.values()) {
-            mission.save(head);
+            mission.save(plugin.getDataFolder(), gson, head);
         }
 
         try {
@@ -135,7 +138,7 @@ public class MissionHandler {
         missionInProgress = true;
         jsonLog = new JsonObject();
 
-        statsTracker = new MalmoStatsTracker(plugin, listener, jsonLog);
+        statsTracker = new EnhancedStatsTracker(plugin, listener, jsonLog);
         statsTracker.startTracking();
 
         playerAnalyzers = new ArrayList<>();
@@ -192,7 +195,7 @@ public class MissionHandler {
                 }
 
                 for(PlayerAnalyzer analyzer : playerAnalyzers) {
-                    analyzer.update(((MalmoStatsTracker) statsTracker).getLastStatsSnapshot(analyzer.getPlayer()));
+                    analyzer.update(((EnhancedStatsTracker) statsTracker).getLastStatsSnapshot(analyzer.getPlayer()));
                 }
             }
         }.runTaskTimerAsynchronously(plugin, 0L, 1L);

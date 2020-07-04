@@ -1,8 +1,8 @@
 package me.tazadejava.analyzer;
 
 import com.google.gson.JsonObject;
-import me.tazadejava.blockranges.BlockRange2D;
-import me.tazadejava.mission.MalmoStatsTracker;
+import me.tazadejava.mission.MissionRoom;
+import me.tazadejava.statstracker.EnhancedStatsTracker;
 import me.tazadejava.mission.Mission;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -10,16 +10,14 @@ import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 //for the most part, this class does not have to exist within the plugin:
 //to export to a separate process:
 // - save the json file continuously and have an external process check for changes, then perform similar actions to what is being done here, but search the JSON file instead of casting
 public class PlayerAnalyzer {
 
-    public static final Material VICTIM_BLOCK = Material.CHEST;
+    public static final Set<Material> VICTIM_BLOCKS = new HashSet<>(Arrays.asList(Material.PRISMARINE, Material.GOLD_BLOCK));
 
     private Player player;
     private Mission mission;
@@ -36,7 +34,7 @@ public class PlayerAnalyzer {
 
     private String currentRoom;
 
-    private MalmoStatsTracker.LastStatsSnapshot lastLastStats;
+    private EnhancedStatsTracker.LastStatsSnapshot lastLastStats;
 
     private List<String> firstLevelActions;
 
@@ -54,16 +52,21 @@ public class PlayerAnalyzer {
         Bukkit.getLogger().info(action);
         firstLevelActions.add(action);
 
+        //TODO temp: print to all players
+        for(Player p : Bukkit.getOnlinePlayers()) {
+            p.sendMessage(action);
+        }
+
         //TODO: pass data into genesis, so that genesis can understand data
     }
 
-    public void update(MalmoStatsTracker.LastStatsSnapshot lastStats) {
-        if(lastLastStats == null) {
+    public void update(EnhancedStatsTracker.LastStatsSnapshot lastStats) {
+        if(lastLastStats == null || lastLastStats.lastPlayerValues == null) {
             lastLastStats = lastStats;
             return;
         }
 
-        MalmoStatsTracker.LastStatsSnapshot deltaStats = lastStats.calculateDeltaSnapshot(lastLastStats);
+        EnhancedStatsTracker.LastStatsSnapshot deltaStats = lastStats.calculateDeltaSnapshot(lastLastStats);
 
         analyzeVictimTarget(lastStats);
         analyzeBrokenBlocks(lastStats, deltaStats);
@@ -73,7 +76,12 @@ public class PlayerAnalyzer {
         lastLastStats = lastStats;
     }
 
-    private void analyzeVictimTarget(MalmoStatsTracker.LastStatsSnapshot lastStats) {
+    private void analyzeVictimTarget(EnhancedStatsTracker.LastStatsSnapshot lastStats) {
+        if(lastStats.lastPlayerValues.get("LineOfSight") instanceof String && ((String) lastStats.lastPlayerValues.get("LineOfSight")).isEmpty()) {
+            currentVictimTarget = null;
+            return;
+        }
+
         JsonObject lineOfSight = (JsonObject) lastStats.lastPlayerValues.get("LineOfSight");
 
         if (lineOfSight.size() > 0 && lineOfSight.get("hitType").getAsString().equals("block")) {
@@ -85,7 +93,7 @@ public class PlayerAnalyzer {
                 currentVictimTarget = null;
             }
 
-            if(block.getType() == VICTIM_BLOCK && !block.equals(currentVictimTarget)) {
+            if(VICTIM_BLOCKS.contains(block.getType()) && !block.equals(currentVictimTarget)) {
                 if(!victimBlocks.contains(block.getLocation())) {
                     victimBlocks.add(block.getLocation());
                 }
@@ -96,25 +104,33 @@ public class PlayerAnalyzer {
         }
     }
 
-    private void analyzeBrokenBlocks(MalmoStatsTracker.LastStatsSnapshot lastStats, MalmoStatsTracker.LastStatsSnapshot deltaStats) {
-        if(deltaStats.lastPlayerBlocksBroken.containsKey(VICTIM_BLOCK.toString().toLowerCase())) {
-            //ASSUMPTION: PLAYER CAN ONLY BREAK ONE BLOCK IN ONE TICK'S TIME (don't think this can be violated in any way)
-            int victimNumber = victimBlocks.indexOf(deltaStats.lastPlayerBlocksBrokenLocations.get(0));
-            log(player.getName() + " saved victim " + victimNumber + ".");
-        } else if(!deltaStats.lastPlayerBlocksBroken.isEmpty()) {
+    private void analyzeBrokenBlocks(EnhancedStatsTracker.LastStatsSnapshot lastStats, EnhancedStatsTracker.LastStatsSnapshot deltaStats) {
+        boolean savedVictim = false;
+        for(Material victimMat : VICTIM_BLOCKS) {
+            if(deltaStats.lastPlayerBlocksBroken.containsKey(victimMat.toString().toLowerCase())) {
+                //ASSUMPTION: PLAYER CAN ONLY BREAK ONE BLOCK IN ONE TICK'S TIME (don't think this can be violated in any way)
+                int victimNumber = victimBlocks.indexOf(deltaStats.lastPlayerBlocksBrokenLocations.get(0));
+                log(player.getName() + " saved victim " + victimNumber + ".");
+
+                savedVictim = true;
+                break;
+            }
+        }
+
+        if(!savedVictim && !deltaStats.lastPlayerBlocksBroken.isEmpty()) {
             for(String name : deltaStats.lastPlayerBlocksBroken.keySet()) {
                 log(player.getName() + " broken a " + name + " block.");
             }
         }
     }
 
-    private void analyzeRoom(MalmoStatsTracker.LastStatsSnapshot lastStats) {
+    private void analyzeRoom(EnhancedStatsTracker.LastStatsSnapshot lastStats) {
         Location location = new Location(player.getWorld(), (double) lastStats.lastPlayerValues.get("XPos"), 0, (double) lastStats.lastPlayerValues.get("ZPos"));
 
         String currentRoomAnalysis = null;
-        for(Map.Entry<String, BlockRange2D> entry : mission.getRooms().entrySet()) {
-            if(entry.getValue().isInRange(location)) {
-                currentRoomAnalysis = entry.getKey();
+        for(MissionRoom room : mission.getRooms()) {
+            if(room.getBounds().isInRange(location)) {
+                currentRoomAnalysis = room.getRoomName();
                 break;
             }
         }
@@ -138,7 +154,7 @@ public class PlayerAnalyzer {
         }
     }
 
-    private void analyzeClickedBlocks(MalmoStatsTracker.LastStatsSnapshot deltaStats) {
+    private void analyzeClickedBlocks(EnhancedStatsTracker.LastStatsSnapshot deltaStats) {
         if(deltaStats.lastPlayerDoorsOpened != 0) {
             log(player.getName() + " opened a door.");
         }

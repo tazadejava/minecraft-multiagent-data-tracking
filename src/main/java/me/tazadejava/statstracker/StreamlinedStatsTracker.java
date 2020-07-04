@@ -1,13 +1,13 @@
-package me.tazadejava.mission;
+package me.tazadejava.statstracker;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import me.tazadejava.mission.MissionEventListener;
 import org.bukkit.FluidCollisionMode;
 import org.bukkit.Location;
 import org.bukkit.Statistic;
 import org.bukkit.World;
-import org.bukkit.block.Block;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Item;
@@ -25,7 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
 
-//use this stats tracker to output json files that fit the UROP format
+//use this stats tracker to output json files that fit the UROP format (post-Malmo parsed files); currently imcomplete
 public class StreamlinedStatsTracker implements StatsTracker {
 
     private LinkedHashMap<String, Statistic[]> trackedStatNames;

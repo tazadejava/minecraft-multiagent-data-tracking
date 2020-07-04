@@ -1,13 +1,10 @@
-package me.tazadejava.mission;
+package me.tazadejava.statstracker;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import org.bukkit.Bukkit;
-import org.bukkit.FluidCollisionMode;
-import org.bukkit.Location;
-import org.bukkit.Statistic;
-import org.bukkit.World;
+import me.tazadejava.mission.MissionEventListener;
+import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
@@ -28,8 +25,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
 
-//use this stats tracker to output data similar to Malmo
-public class MalmoStatsTracker implements StatsTracker {
+//use this stats tracker to output data useful for recommendation system
+public class EnhancedStatsTracker implements StatsTracker {
 
     public class LastStatsSnapshot {
 
@@ -40,7 +37,7 @@ public class MalmoStatsTracker implements StatsTracker {
         public HashMap<String, Integer> lastPlayerBlocksBroken;
         public List<Location> lastPlayerBlocksBrokenLocations;
 
-        public LastStatsSnapshot(MalmoStatsTracker tracker, Player player) {
+        public LastStatsSnapshot(EnhancedStatsTracker tracker, Player player) {
             this.trackedStats = tracker.trackedStats;
 
             if(tracker.lastPlayerStats.containsKey(player)) {
@@ -76,11 +73,11 @@ public class MalmoStatsTracker implements StatsTracker {
             }
 
             deltaStats.lastPlayerValues = new HashMap<>();
-            for(Map.Entry<String, Object> entry : lastPlayerValues.entrySet()) {
-                if(!lastStats.lastPlayerValues.containsKey(entry.getKey())) {
+            for (Map.Entry<String, Object> entry : lastPlayerValues.entrySet()) {
+                if (!lastStats.lastPlayerValues.containsKey(entry.getKey())) {
                     deltaStats.lastPlayerValues.put(entry.getKey(), entry.getValue());
                 } else {
-                    if(!lastStats.lastPlayerValues.get(entry.getKey()).equals(entry.getValue())) {
+                    if (!lastStats.lastPlayerValues.get(entry.getKey()).equals(entry.getValue())) {
                         deltaStats.lastPlayerValues.put(entry.getKey(), entry.getValue());
                     }
                 }
@@ -134,7 +131,7 @@ public class MalmoStatsTracker implements StatsTracker {
 
     private List<Player> playerList;
 
-    public MalmoStatsTracker(JavaPlugin plugin, MissionEventListener eventListener, JsonObject jsonLog) {
+    public EnhancedStatsTracker(JavaPlugin plugin, MissionEventListener eventListener, JsonObject jsonLog) {
         this.plugin = plugin;
         this.eventListener = eventListener;
         this.jsonLog = jsonLog;

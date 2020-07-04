@@ -52,6 +52,15 @@ public class BlockRange2D {
         return startBlock != null && endBlock != null;
     }
 
+    //expands in all four directions by amount
+    public void expand(int amount) {
+        startX -= amount;
+        startZ -= amount;
+
+        endX += amount;
+        endZ += amount;
+    }
+
     public int[] getRangeX() {
         return new int[] {startX, endX};
     }

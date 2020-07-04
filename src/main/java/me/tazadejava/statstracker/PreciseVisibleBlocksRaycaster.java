@@ -1,4 +1,4 @@
-package me.tazadejava.mission;
+package me.tazadejava.statstracker;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -59,15 +59,23 @@ public class PreciseVisibleBlocksRaycaster {
     private static final int MAX_DISTANCE = 32;
     private static final int MAX_TIMEOUT = 3000;
 
+    private static final boolean DEBUG_MESSAGES = false;
+
     private boolean doHyperPrecision;
+    private boolean alwaysAddTargetBlock;
+    //note: for lower and upper bounds, the algorithm will still calculate target block regardless of bound and perform A* air travel outside of these boundaries to maximize accuracy; however, it will only raycast solid blocks if on the bounds
+    private int yLowerBound, yUpperBound;
 
     //if hyperPrecision is enabled, up to 5 raycasts will be sent out instead of one to determine if a block is visible to the player; may be more computationally heavy, but will improve accuracy
     public PreciseVisibleBlocksRaycaster(boolean doHyperPrecision) {
-        this(doHyperPrecision, true);
+        this(doHyperPrecision, true, true, 0, 255);
     }
 
-    public PreciseVisibleBlocksRaycaster(boolean doHyperPrecision, boolean considerUpBlocks) {
+    public PreciseVisibleBlocksRaycaster(boolean doHyperPrecision, boolean considerUpBlocks, boolean alwaysAddTargetBlock, int yLowerBound, int yUpperBound) {
         this.doHyperPrecision = doHyperPrecision;
+        this.alwaysAddTargetBlock = alwaysAddTargetBlock;
+        this.yLowerBound = yLowerBound;
+        this.yUpperBound = yUpperBound;
 
         if(considerUpBlocks) {
             adjacentFaces = new BlockFace[] {BlockFace.NORTH, BlockFace.EAST, BlockFace.WEST, BlockFace.SOUTH, BlockFace.UP, BlockFace.DOWN};
@@ -105,13 +113,15 @@ public class PreciseVisibleBlocksRaycaster {
 //                }
 //            }
 
-            if(lineOfSight.size() > 1) {
+            if (lineOfSight.size() > 1) {
                 Block airLineOfSight = lineOfSight.get(lineOfSight.size() - 2);
                 visitedSolidBlocks.put(lastLineOfSight, airLineOfSight);
                 unvisitedAirBlocks.add(airLineOfSight);
             }
 
-            visibleBlocks.add(lineOfSight.get(lineOfSight.size() - 1));
+            if(alwaysAddTargetBlock) {
+                visibleBlocks.add(lineOfSight.get(lineOfSight.size() - 1));
+            }
 
             int timeout = MAX_TIMEOUT;
             while (!unvisitedAirBlocks.isEmpty()) {
@@ -120,7 +130,7 @@ public class PreciseVisibleBlocksRaycaster {
 //                    Bukkit.broadcastMessage("AIR BLOCKS: " + unvisitedAirBlocks.size());
 //                }
                 if(timeout <= 0) {
-                    Bukkit.broadcastMessage("TIMEOUT!");
+                    if(DEBUG_MESSAGES) Bukkit.broadcastMessage("TIMEOUT!");
                     break;
                 }
 
@@ -131,6 +141,7 @@ public class PreciseVisibleBlocksRaycaster {
                 for (BlockFace face : adjacentFaces) {
                     Block adjacentBlock = airBlock.getRelative(face);
 
+                    //check FOV
                     if (!bounds.isInBounds(adjacentBlock.getLocation().add(0.5, 0.5, 0.5))) {
                         continue;
                     }
@@ -143,6 +154,11 @@ public class PreciseVisibleBlocksRaycaster {
 
                             if (adjacentAdjacentBlock.getType() != Material.AIR && !visitedSolidBlocks.containsKey(adjacentAdjacentBlock)) {
                                 visitedSolidBlocks.put(adjacentAdjacentBlock, adjacentBlock);
+
+                                //check Y constraints, if they exist; do only for solid blocks so that air can still travel
+                                if(adjacentAdjacentBlock.getLocation().getBlockY() < yLowerBound || adjacentAdjacentBlock.getLocation().getBlockY() > yUpperBound) {
+                                    continue;
+                                }
 
                                 boolean raycast = doHyperPrecision ? raycastHitsBlockFuzzyHyperPrecise(p, adjacentFace, adjacentAdjacentBlock) : raycastHitsBlockFuzzy(p, adjacentFace, adjacentAdjacentBlock);
                                 if (raycast) {
@@ -166,8 +182,12 @@ public class PreciseVisibleBlocksRaycaster {
 //                            continue;
 //                        }
 
-                        //TODO: raycast to check
                         visitedSolidBlocks.put(adjacentBlock, airBlock);
+
+                        //check Y constraints, if they exist; do only for solid blocks so that air can still travel
+                        if(adjacentBlock.getLocation().getBlockY() < yLowerBound || adjacentBlock.getLocation().getBlockY() > yUpperBound) {
+                            continue;
+                        }
 
                         boolean raycast = doHyperPrecision ? raycastHitsBlockFuzzyHyperPrecise(p, face, adjacentBlock) : raycastHitsBlockFuzzy(p, face, adjacentBlock);
                         if (raycast) {

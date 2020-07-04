@@ -1,15 +1,16 @@
 package me.tazadejava.mission;
 
+import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.stream.JsonReader;
 import me.tazadejava.actiontracker.Utils;
 import me.tazadejava.blockranges.BlockRange2D;
 import org.bukkit.Location;
 
+import java.io.*;
 import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
 //holds data for a particular mission
 public class Mission {
@@ -19,7 +20,7 @@ public class Mission {
 
     private int duration;
     private Location playerSpawnLocation;
-    private HashMap<String, BlockRange2D> rooms = new HashMap<>();
+    private List<MissionRoom> rooms = new ArrayList<>();
 
     public Mission(String missionName) {
         this.missionName = missionName;
@@ -28,7 +29,7 @@ public class Mission {
         missionID = missionID.replaceAll("[^a-zA-Z0-9]", "");
     }
 
-    public Mission(String id, JsonObject details) {
+    public Mission(String id, File dataFolder, Gson gson, JsonObject details) {
         missionID = id;
 
         missionName = details.get("name").getAsString();
@@ -39,16 +40,69 @@ public class Mission {
         if (details.has("location")) {
             playerSpawnLocation = Utils.getLocation(details.getAsJsonObject("location"));
         }
-        if (details.has("rooms")) {
-            JsonObject roomsObject = details.getAsJsonObject("rooms");
 
-            for(Map.Entry<String, JsonElement> entry : roomsObject.entrySet()) {
-                rooms.put(entry.getKey(), new BlockRange2D(roomsObject.getAsJsonObject(entry.getKey())));
+        loadMissionFolderData(dataFolder, gson);
+    }
+
+    private void loadMissionFolderData(File dataFolder, Gson gson) {
+        File missionFolder = new File(dataFolder.getAbsolutePath() + "/" + missionID + "/");
+        if(!missionFolder.exists()) {
+            return;
+        }
+
+        try {
+            File roomsFile = new File(missionFolder.getAbsolutePath() + "/rooms.json");
+            if(!roomsFile.exists()) {
+                return;
             }
+
+            FileReader reader = new FileReader(roomsFile);
+            JsonReader jsonReader = new JsonReader(reader);
+
+            JsonObject object = gson.fromJson(jsonReader, JsonObject.class);
+
+            for(Map.Entry<String, JsonElement> entry : object.entrySet()) {
+                rooms.add(new MissionRoom(entry.getKey(), playerSpawnLocation.getWorld(), entry.getValue().getAsJsonObject()));
+            }
+
+            reader.close();
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
-    public void save(JsonObject main) {
+    private void saveMissionFolderData(File dataFolder, Gson gson) {
+        //create mission folder
+        File missionFolder = new File(dataFolder.getAbsolutePath() + "/" + missionID + "/");
+        if(!missionFolder.exists()) {
+            missionFolder.mkdirs();
+        }
+
+        //save room data
+
+        JsonObject roomObject = new JsonObject();
+
+        for(MissionRoom room : rooms) {
+            room.save(roomObject);
+        }
+
+        try {
+            File roomsFile = new File(missionFolder.getAbsolutePath() + "/rooms.json");
+            if(!roomsFile.exists()) {
+                roomsFile.createNewFile();
+            }
+
+            FileWriter writer = new FileWriter(roomsFile);
+            gson.toJson(roomObject, writer);
+            writer.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void save(File dataFolder, Gson gson, JsonObject main) {
         JsonObject details = new JsonObject();
         details.addProperty("name", missionName);
         if (hasDuration()) {
@@ -57,17 +111,10 @@ public class Mission {
         if (hasPlayerSpawnLocation()) {
             details.add("location", Utils.saveLocation(playerSpawnLocation));
         }
-        if(!rooms.isEmpty()) {
-            JsonObject roomsObject = new JsonObject();
-
-            for(Map.Entry<String, BlockRange2D> entry : rooms.entrySet()) {
-                roomsObject.add(entry.getKey(), entry.getValue().save());
-            }
-
-            details.add("rooms", roomsObject);
-        }
 
         main.add(missionID, details);
+
+        saveMissionFolderData(dataFolder, gson);
     }
 
     public void setMissionName(String missionName) {
@@ -82,12 +129,12 @@ public class Mission {
         playerSpawnLocation = loc;
     }
 
-    public void addRoom(String roomName, BlockRange2D range) {
-        if(hasRoom(roomName)) {
+    public void addRoom(MissionRoom room) {
+        if(hasRoom(room.getRoomName())) {
             return;
         }
 
-        rooms.put(roomName, range);
+        rooms.add(room);
     }
 
     public boolean hasDuration() {
@@ -119,10 +166,16 @@ public class Mission {
     }
 
     public boolean hasRoom(String roomName) {
-        return rooms.containsKey(roomName);
+        for(MissionRoom room : rooms) {
+            if(room.getRoomName().equals(roomName)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
-    public HashMap<String, BlockRange2D> getRooms() {
+    public List<MissionRoom> getRooms() {
         return rooms;
     }
 }

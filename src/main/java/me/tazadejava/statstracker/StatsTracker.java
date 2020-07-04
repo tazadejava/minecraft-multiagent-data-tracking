@@ -1,4 +1,4 @@
-package me.tazadejava.mission;
+package me.tazadejava.statstracker;
 
 import org.bukkit.entity.Player;
 
