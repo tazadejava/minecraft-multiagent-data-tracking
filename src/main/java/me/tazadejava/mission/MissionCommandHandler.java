@@ -298,6 +298,22 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                         commandSender.sendMessage((mission.canRunMission() ? ChatColor.GREEN : ChatColor.RED) + "- " + mission.getMissionName());
                     }
                     break;
+                case "info":
+                    if(args.length < 2) {
+                        commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission info <mission name>");
+                        break;
+                    }
+                    if(!missionManager.doesMissionExist(args[1])) {
+                        commandSender.sendMessage(ChatColor.RED + "A command with that name does not exist!");
+                        break;
+                    }
+
+                    Mission mission = missionManager.getMission(args[1]);
+
+                    commandSender.sendMessage(ChatColor.DARK_PURPLE + "Mission stats for " + mission.getMissionName() + ":");
+
+                    commandSender.sendMessage(ChatColor.LIGHT_PURPLE + "  Number of rooms: " + mission.getRooms().size());
+                    break;
                 case "set":
                     if(args.length < 3) {
                         commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission set <mission name> <duration/location> [additional arguments]");
@@ -308,7 +324,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                         break;
                     }
 
-                    Mission mission = missionManager.getMission(args[1]);
+                    mission = missionManager.getMission(args[1]);
 
                     if(missionManager.isMissionInProgress(mission)) {
                         commandSender.sendMessage(ChatColor.RED + "That mission is currently in progress! You cannot modify an ongoing mission.");
@@ -569,7 +585,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
         switch(args.length) {
             case 1:
                 List<String> completions = new ArrayList<>();
-                StringUtil.copyPartialMatches(args[0], Arrays.asList("create", "start", "abort", "list", "set", "getitem", "room"), completions);
+                StringUtil.copyPartialMatches(args[0], Arrays.asList("create", "start", "abort", "list", "set", "getitem", "info", "room"), completions);
                 Collections.sort(completions);
 
                 return completions;
@@ -581,6 +597,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                         return new ArrayList<>();
                     case "start":
                     case "set":
+                    case "info":
                         completions = new ArrayList<>();
 
                         for(Mission mission : missionManager.getAllMissions()) {
