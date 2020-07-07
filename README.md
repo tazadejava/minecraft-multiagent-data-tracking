@@ -3,9 +3,11 @@ Spigot plugin developed for Genesis Recommendation System UROP, Summer of 2020.
 
 # Quick Start: how to test the raycasting visibility algorithm
 
+**Note that you do not need to clone this repo to test the raycasting algorithm. Simply download the server file to test the algorithm, and you can use the repo to view the source and see how the algorithm is implemented.**
+
 1) UNZIP the DataTrackingTestServer zip file. This will hold the Minecraft server that you will need to run and join.
 
-2) Within the DataTrackingTestServer folder, there should be a start.sh file. Execute this file and the server should start up. The server is ready when it states "Done (XXXs)". The server is on 1.16.1.
+2) Within the DataTrackingTestServer folder, there should be a start.sh file. Execute this file and the server should start up (this works for Mac and Linux. For windows computers, use the RUN.bat file instead). The server is ready when it states "Done (XXXs)". The server is on 1.16.1.
 
 3) Open up Minecraft and if you are on the same computer as the server, join via the address: localhost
 
@@ -24,7 +26,7 @@ Spigot plugin developed for Genesis Recommendation System UROP, Summer of 2020.
 - "/mission raycastonce"
     - This will only run the algorithm once, so you can see what is currently visible at your current view.
     - Again, type "/mission raycastreset" to reset the blocks to normal.
-
+    
 # Important classes that implement this algorithm
 
 ## MissionCommandHandler
@@ -51,4 +53,4 @@ This class implements the raycasting algorithm. Simply run getVisibleBlocks meth
 
 # Remarks
 
-Let me know if anything is confusing or you have questions about something else related to plugins! A lot of the code is still in progress, and I will be adding comments/cleaning up code as time goes on.
+Let me know if anything is confusing or you have questions about something else related to the plugin (or plugins in general)! A lot of the code is still in progress, and I will be adding comments/cleaning up code as time goes on.
