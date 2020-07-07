@@ -21,6 +21,8 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -57,19 +59,19 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
     }
 
     private void defineExcludedTransformations() {
-        excludedTransformations.add(Material.ACACIA_DOOR);
-        excludedTransformations.add(Material.OAK_DOOR);
-        excludedTransformations.add(Material.REDSTONE_TORCH);
-        excludedTransformations.add(Material.REDSTONE);
-        excludedTransformations.add(Material.REPEATER);
-        excludedTransformations.add(Material.COMPARATOR);
-        excludedTransformations.add(Material.CHEST);
-        excludedTransformations.add(Material.ENDER_CHEST);
-        excludedTransformations.add(Material.LEVER);
-        excludedTransformations.add(Material.STONE_BUTTON);
-        excludedTransformations.add(Material.TRIPWIRE_HOOK);
-        excludedTransformations.add(Material.OAK_SIGN);
-        excludedTransformations.add(Material.OAK_WALL_SIGN);
+//        excludedTransformations.add(Material.ACACIA_DOOR);
+//        excludedTransformations.add(Material.OAK_DOOR);
+//        excludedTransformations.add(Material.REDSTONE_TORCH);
+//        excludedTransformations.add(Material.REDSTONE);
+//        excludedTransformations.add(Material.REPEATER);
+//        excludedTransformations.add(Material.COMPARATOR);
+//        excludedTransformations.add(Material.CHEST);
+//        excludedTransformations.add(Material.ENDER_CHEST);
+//        excludedTransformations.add(Material.LEVER);
+//        excludedTransformations.add(Material.STONE_BUTTON);
+//        excludedTransformations.add(Material.TRIPWIRE_HOOK);
+//        excludedTransformations.add(Material.OAK_SIGN);
+//        excludedTransformations.add(Material.OAK_WALL_SIGN);
     }
 
     public void restoreBlocks(CommandSender sender) {
@@ -177,8 +179,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
         lastBlockState.clear();
         blockPlayer.clear();
 
-        PreciseVisibleBlocksRaycaster raycaster = new PreciseVisibleBlocksRaycaster(true, true, true, 52, 53);
-//        PreciseVisibleBlocksRaycaster raycaster = new PreciseVisibleBlocksRaycaster(true, true, 0, 255);
+        PreciseVisibleBlocksRaycaster raycaster = new PreciseVisibleBlocksRaycaster(true, true, true, 0, 255);
 
         BlockData defaultMaterial = Bukkit.getServer().createBlockData(Material.GLASS);
 
@@ -232,13 +233,13 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                         restoreBlocks(commandSender);
                         player.sendMessage("Abort raycaster.");
                     } else {
-                        player.sendMessage("Abort raycaster. Type in /mission testreset to restore blocks, or perform the test again.");
+                        player.sendMessage("Abort raycaster. Type in /mission raycastreset to restore blocks, or perform the test again.");
                     }
                     cancel();
                 }
 
                 if(!loopRaycast) {
-                    player.sendMessage("Abort raycaster. Type in /mission testreset to restore blocks, or perform the test again.");
+                    player.sendMessage("Abort raycaster. Type in /mission raycastreset to restore blocks, or perform the test again.");
                     cancel();
                 }
             }
@@ -272,6 +273,52 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                 case "raycastreset": //resets the blocks that are converted to glass
                     restoreBlocks(commandSender);
                     break;
+
+                case "graphtest": //testing command to find distances between any two nodes; unsafe to crashing if supplied incorrect arguments
+                    if(args.length < 6) {
+                        commandSender.sendMessage("/mission graphtest <mission name> <room/decision> <name> <room/decision> <name>");
+                        break;
+                    } else {
+                        Mission mission = missionManager.getMission(args[1]);
+
+                        MissionGraph.MissionVertexType type1 = MissionGraph.MissionVertexType.valueOf(args[2].toUpperCase());
+                        MissionGraph.MissionVertexType type2 = MissionGraph.MissionVertexType.valueOf(args[4].toUpperCase());
+
+                        String name1 = args[3];
+                        String name2 = args[5];
+
+                        commandSender.sendMessage("Path between " + type1 + " " + name1 + " and " + type2 + " " + name2 + ":");
+
+                        MissionGraph.VertexPath path = mission.getMissionGraph().getShortestPathUsingEdges(type1, name1, type2, name2);
+
+                        commandSender.sendMessage(path.getPath().toString());
+                        commandSender.sendMessage("Length: " + path.getPathLength() + " blocks");
+
+                        if(path.getPath().size() > 0) {
+                            LinkedList<MissionGraph.MissionVertex> pathTrace = (LinkedList<MissionGraph.MissionVertex>) path.getPath().clone();
+
+                            Location firstLoc = pathTrace.poll().location;
+                            Entity ent = firstLoc.getWorld().spawnEntity(firstLoc, EntityType.ARMOR_STAND);
+
+                            commandSender.sendMessage("Showing path...");
+                            new BukkitRunnable() {
+
+                                @Override
+                                public void run() {
+                                    if (pathTrace.isEmpty()) {
+                                        cancel();
+                                        ent.remove();
+                                        commandSender.sendMessage("Path show ended.");
+                                        return;
+                                    }
+
+                                    ent.teleport(pathTrace.poll().location);
+                                }
+                            }.runTaskTimer(plugin, 20L, 20L);
+                        }
+                    }
+                    break;
+
                 case "create":
                     if(args.length < 2) {
                         commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission create <mission name>");
@@ -313,6 +360,23 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                     commandSender.sendMessage(ChatColor.DARK_PURPLE + "Mission stats for " + mission.getMissionName() + ":");
 
                     commandSender.sendMessage(ChatColor.LIGHT_PURPLE + "  Number of rooms: " + mission.getRooms().size());
+
+                    commandSender.sendMessage(ChatColor.LIGHT_PURPLE + "  Number of decision points (armor stands, shown for 5 seconds): " + mission.getDecisionPoints().size());
+
+                    List<Entity> entities = new ArrayList<>();
+                    for(Location loc : mission.getDecisionPoints().values()) {
+                        entities.add(loc.getWorld().spawnEntity(loc, EntityType.ARMOR_STAND));
+                    }
+
+                    new BukkitRunnable() {
+                        @Override
+                        public void run() {
+                            for(Entity ent : entities) {
+                                ent.remove();
+                            }
+                        }
+                    }.runTaskLater(plugin, 100L);
+
                     break;
                 case "set":
                     if(args.length < 3) {
@@ -397,13 +461,148 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                         commandSender.sendMessage(ChatColor.RED + "No mission is currently in progress!");
                     }
                     break;
-                case "room":
+                case "add":
                     if(!(commandSender instanceof Player)) {
                         commandSender.sendMessage(ChatColor.RED + "You must be a player to execute this command!");
                         break;
                     }
 
                     Player p = (Player) commandSender;
+
+                    if(args.length < 3) {
+                        commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission add <mission name> <decisionpoint/edge> [command-specific arguments]");
+                        break;
+                    }
+
+                    switch(args[2].toLowerCase()) {
+                        case "decisionpoint":
+                            if(args.length < 4) {
+                                commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission add <mission name> decisionpoint <decision point name>");
+                                break;
+                            }
+                            if(!missionManager.doesMissionExist(args[1])) {
+                                commandSender.sendMessage(ChatColor.RED + "That mission does not exist!");
+                                break;
+                            }
+
+                            mission = missionManager.getMission(args[1]);
+                            String pointName = args[3];
+
+                            if(mission.hasDecisionPoint(pointName)) {
+                                commandSender.sendMessage(ChatColor.RED + "A decision point with that name already exists!");
+                                break;
+                            }
+
+                            Location loc = p.getLocation().clone();
+                            loc.setX(Math.round(loc.getX() * 2) / 2.0);
+                            loc.setY(Math.round(loc.getY() * 2) / 2.0);
+                            loc.setZ(Math.round(loc.getZ() * 2) / 2.0);
+                            mission.addDecisionPoint(pointName, loc);
+                            commandSender.sendMessage("You've added a decision point named " + pointName + " at your current location (" + loc.getX() + " " + loc.getY() + " " + loc.getZ() + ")!");
+
+                            Entity armorStand = loc.getWorld().spawnEntity(loc, EntityType.ARMOR_STAND);
+                            new BukkitRunnable() {
+                                @Override
+                                public void run() {
+                                    armorStand.remove();
+                                }
+                            }.runTaskLater(plugin, 60L);
+
+                            missionManager.saveData();
+                            break;
+                        case "edge":
+                            if(args.length < 7) {
+                                commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission add <mission name> edge <room/decision> <room/decision name 1> <room/decision> <room/decision name 2> [time between path trace in ticks]");
+                                break;
+                            }
+                            if(!missionManager.doesMissionExist(args[1])) {
+                                commandSender.sendMessage(ChatColor.RED + "That mission does not exist!");
+                                break;
+                            }
+
+                            mission = missionManager.getMission(args[1]);
+
+                            MissionGraph.MissionVertexType type1 = null, type2 = null;
+                            try {
+                                type1 = MissionGraph.MissionVertexType.valueOf(args[3].toUpperCase());
+                                type2 = MissionGraph.MissionVertexType.valueOf(args[5].toUpperCase());
+                            } catch(IllegalArgumentException ex) {
+                                commandSender.sendMessage(ChatColor.RED + "That's not a valid node type. It must be either room or decision for each node.");
+                                break;
+                            }
+
+                            String name1 = args[4];
+                            String name2 = args[6];
+
+                            int delayTicks = 10;
+                            if(args.length > 7) {
+                                if(Utils.isInteger(args[7])) {
+                                    delayTicks = Integer.parseInt(args[7]);
+                                } else {
+                                    commandSender.sendMessage(ChatColor.RED + "Not a number.");
+                                    break;
+                                }
+                            }
+
+                            if(type1 == MissionGraph.MissionVertexType.ROOM && !mission.hasRoom(name1)) {
+                                commandSender.sendMessage(ChatColor.RED + "There is no room node named " + name1 + ".");
+                                break;
+                            }
+                            if(type1 == MissionGraph.MissionVertexType.DECISION && !mission.hasRoom(name1)) {
+                                commandSender.sendMessage(ChatColor.RED + "There is no decision node named " + name1 + ".");
+                                break;
+                            }
+
+                            if(type2 == MissionGraph.MissionVertexType.ROOM && !mission.hasRoom(name2)) {
+                                commandSender.sendMessage(ChatColor.RED + "There is no room node named " + name2 + ".");
+                                break;
+                            }
+                            if(type2 == MissionGraph.MissionVertexType.DECISION && !mission.hasRoom(name2)) {
+                                commandSender.sendMessage(ChatColor.RED + "There is no decision node named " + name2 + ".");
+                                break;
+                            }
+
+                            MissionGraph.LocationPath path = mission.getMissionGraph().defineEdge(type1, name1, type2, name2);
+                            commandSender.sendMessage("You defined an edge between " + type1 + ": " + name1 +  " and " + type2 + ": " + name2 + "! The distance is " + path.getPathLength() + " blocks.");
+
+                            if(path.getPathLength() > 0) {
+                                LinkedList<Location> pathTrace = (LinkedList<Location>) path.getPath().clone();
+                                Location firstLoc = pathTrace.poll();
+                                Entity ent = firstLoc.getWorld().spawnEntity(firstLoc, EntityType.ARMOR_STAND);
+
+                                commandSender.sendMessage("Showing path...");
+                                new BukkitRunnable() {
+
+                                    @Override
+                                    public void run() {
+                                        if (pathTrace.isEmpty()) {
+                                            cancel();
+                                            ent.remove();
+                                            commandSender.sendMessage("Path show ended.");
+                                            return;
+                                        }
+
+                                        commandSender.sendMessage("Path in progress: " + (path.getPath().size() - pathTrace.size()) + "/" + path.getPath().size());
+                                        ent.teleport(pathTrace.poll());
+                                    }
+                                }.runTaskTimer(plugin, 20L, delayTicks);
+                            }
+
+                            missionManager.saveData();
+                            break;
+                        default:
+                            commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission add <mission name> <decisionpoint/edge> [command-specific arguments]");
+                            break;
+                    }
+
+                    break;
+                case "room":
+                    if(!(commandSender instanceof Player)) {
+                        commandSender.sendMessage(ChatColor.RED + "You must be a player to execute this command!");
+                        break;
+                    }
+
+                    p = (Player) commandSender;
 
                     //room builder mode specific arguments
                     if(roomBuilderRooms.containsKey(p)) {
@@ -585,7 +784,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
         switch(args.length) {
             case 1:
                 List<String> completions = new ArrayList<>();
-                StringUtil.copyPartialMatches(args[0], Arrays.asList("create", "start", "abort", "list", "set", "getitem", "info", "room"), completions);
+                StringUtil.copyPartialMatches(args[0], Arrays.asList("create", "start", "abort", "list", "set", "getitem", "info", "room", "add"), completions);
                 Collections.sort(completions);
 
                 return completions;
@@ -598,6 +797,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                     case "start":
                     case "set":
                     case "info":
+                    case "add":
                         completions = new ArrayList<>();
 
                         for(Mission mission : missionManager.getAllMissions()) {
@@ -632,6 +832,8 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                         StringUtil.copyPartialMatches(args[2], Arrays.asList("duration", "location"), completions);
 
                         return completions;
+                    case "add":
+                        return Arrays.asList("decisionpoint", "edge");
                     case "room":
                         if(!roomBuilderRooms.containsKey(sender)) {
                             return new ArrayList<>(Arrays.asList("create"));

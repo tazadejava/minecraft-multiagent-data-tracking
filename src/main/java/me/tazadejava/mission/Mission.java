@@ -5,7 +5,6 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.stream.JsonReader;
 import me.tazadejava.actiontracker.Utils;
-import me.tazadejava.blockranges.BlockRange2D;
 import org.bukkit.Location;
 
 import java.io.*;
@@ -20,13 +19,19 @@ public class Mission {
 
     private int duration;
     private Location playerSpawnLocation;
+
     private List<MissionRoom> rooms = new ArrayList<>();
+    private HashMap<String, Location> decisionPoints = new HashMap<>();
+
+    private MissionGraph graph;
 
     public Mission(String missionName) {
         this.missionName = missionName;
 
         missionID = UUID.randomUUID().toString() + "-" + LocalDateTime.now().toString();
         missionID = missionID.replaceAll("[^a-zA-Z0-9]", "");
+
+        graph = new MissionGraph(this);
     }
 
     public Mission(String id, File dataFolder, Gson gson, JsonObject details) {
@@ -52,20 +57,38 @@ public class Mission {
 
         try {
             File roomsFile = new File(missionFolder.getAbsolutePath() + "/rooms.json");
-            if(!roomsFile.exists()) {
-                return;
+            if(roomsFile.exists()) {
+                FileReader reader = new FileReader(roomsFile);
+                JsonReader jsonReader = new JsonReader(reader);
+
+                JsonObject object = gson.fromJson(jsonReader, JsonObject.class);
+
+                for (Map.Entry<String, JsonElement> entry : object.entrySet()) {
+                    rooms.add(new MissionRoom(entry.getKey(), playerSpawnLocation.getWorld(), entry.getValue().getAsJsonObject()));
+                }
+
+                reader.close();
             }
 
-            FileReader reader = new FileReader(roomsFile);
-            JsonReader jsonReader = new JsonReader(reader);
+            File decisionPointsFile = new File(missionFolder.getAbsolutePath() + "/decisionGraph.json");
+            if(decisionPointsFile.exists()) {
+                FileReader reader = new FileReader(decisionPointsFile);
+                JsonReader jsonReader = new JsonReader(reader);
 
-            JsonObject object = gson.fromJson(jsonReader, JsonObject.class);
+                JsonObject main = gson.fromJson(jsonReader, JsonObject.class);
 
-            for(Map.Entry<String, JsonElement> entry : object.entrySet()) {
-                rooms.add(new MissionRoom(entry.getKey(), playerSpawnLocation.getWorld(), entry.getValue().getAsJsonObject()));
+                JsonObject decisionPointsObj = main.getAsJsonObject("decisionPoints");
+                for(Map.Entry<String, JsonElement> entry : decisionPointsObj.entrySet()) {
+                    String point = entry.getValue().getAsString();
+                    String[] split = point.split(" ");
+                    decisionPoints.put(entry.getKey(), new Location(playerSpawnLocation.getWorld(), Double.parseDouble(split[0]), Double.parseDouble(split[1]), Double.parseDouble(split[2])));
+                }
+
+                graph = new MissionGraph(this, main.getAsJsonObject("graphData"));
+
+                reader.close();
             }
 
-            reader.close();
         } catch (FileNotFoundException e) {
             e.printStackTrace();
         } catch (IOException e) {
@@ -100,6 +123,35 @@ public class Mission {
         } catch (IOException e) {
             e.printStackTrace();
         }
+
+        //save decision point data
+
+        if(!decisionPoints.isEmpty()) {
+            JsonObject main = new JsonObject();
+
+            JsonObject decisionPointsObj = new JsonObject();
+            for(Map.Entry<String, Location> entry : decisionPoints.entrySet()) {
+                Location loc = entry.getValue();
+                decisionPointsObj.addProperty(entry.getKey(), loc.getX() + " " + loc.getY() + " " + loc.getZ());
+            }
+
+            main.add("decisionPoints", decisionPointsObj);
+
+            main.add("graphData", graph.save());
+
+            try {
+                File decisionPointsFile = new File(missionFolder.getAbsolutePath() + "/decisionGraph.json");
+                if(!decisionPointsFile.exists()) {
+                    decisionPointsFile.createNewFile();
+                }
+
+                FileWriter writer = new FileWriter(decisionPointsFile);
+                gson.toJson(main, writer);
+                writer.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
     }
 
     public void save(File dataFolder, Gson gson, JsonObject main) {
@@ -110,6 +162,15 @@ public class Mission {
         }
         if (hasPlayerSpawnLocation()) {
             details.add("location", Utils.saveLocation(playerSpawnLocation));
+        }
+
+        if(!decisionPoints.isEmpty()) {
+            JsonObject decisionPointsObj = new JsonObject();
+            for(Map.Entry<String, Location> entry : decisionPoints.entrySet()) {
+                Location loc = entry.getValue();
+                decisionPointsObj.addProperty(entry.getKey(), loc.getX() + " " + loc.getY() + " " + loc.getZ());
+            }
+            details.add("decisionPoints", decisionPointsObj);
         }
 
         main.add(missionID, details);
@@ -175,7 +236,33 @@ public class Mission {
         return false;
     }
 
+    public boolean hasDecisionPoint(String name) {
+        return decisionPoints.containsKey(name);
+    }
+
+    public void addDecisionPoint(String name, Location loc) {
+        decisionPoints.put(name, loc);
+    }
+
+    public HashMap<String, Location> getDecisionPoints() {
+        return decisionPoints;
+    }
+
+    public MissionRoom getRoom(String name) {
+        for(MissionRoom room : rooms) {
+            if(room.getRoomName().equals(name)) {
+                return room;
+            }
+        }
+
+        return null;
+    }
+
     public List<MissionRoom> getRooms() {
         return rooms;
+    }
+
+    public MissionGraph getMissionGraph() {
+        return graph;
     }
 }

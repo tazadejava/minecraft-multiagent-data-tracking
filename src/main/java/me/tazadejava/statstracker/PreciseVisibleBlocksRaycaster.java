@@ -66,6 +66,8 @@ public class PreciseVisibleBlocksRaycaster {
     //note: for lower and upper bounds, the algorithm will still calculate target block regardless of bound and perform A* air travel outside of these boundaries to maximize accuracy; however, it will only raycast solid blocks if on the bounds
     private int yLowerBound, yUpperBound;
 
+    private Set<Material> transparentMaterials = new HashSet<>(Arrays.asList(Material.AIR, Material.OAK_DOOR));
+
     //if hyperPrecision is enabled, up to 5 raycasts will be sent out instead of one to determine if a block is visible to the player; may be more computationally heavy, but will improve accuracy
     public PreciseVisibleBlocksRaycaster(boolean doHyperPrecision) {
         this(doHyperPrecision, true, true, 0, 255);
@@ -93,12 +95,12 @@ public class PreciseVisibleBlocksRaycaster {
 
         FOVBounds bounds = new FOVBounds(p);
 
-        List<Block> lineOfSight = p.getLineOfSight(null, MAX_DISTANCE);
+        List<Block> lineOfSight = p.getLineOfSight(transparentMaterials, MAX_DISTANCE);
 
         if(!lineOfSight.isEmpty()) {
             Block lastLineOfSight = lineOfSight.get(lineOfSight.size() - 1);
 
-            if(lastLineOfSight.getType() == Material.AIR) {
+            if(transparentMaterials.contains(lastLineOfSight.getType())) {
                 return visibleBlocks.toArray(new Block[0]);
             }
 
@@ -146,13 +148,13 @@ public class PreciseVisibleBlocksRaycaster {
                         continue;
                     }
 
-                    if (adjacentBlock.getType() == Material.AIR) {
+                    if (transparentMaterials.contains(adjacentBlock.getType())) {
                         //if air, then make sure there is an adjacent block that doesn't already exist in visitedSolidBlocks. then, add to unvisited.
                         boolean foundAdjacentSolidBlock = false;
                         for (BlockFace adjacentFace : adjacentFaces) {
                             Block adjacentAdjacentBlock = adjacentBlock.getRelative(adjacentFace);
 
-                            if (adjacentAdjacentBlock.getType() != Material.AIR && !visitedSolidBlocks.containsKey(adjacentAdjacentBlock)) {
+                            if (!transparentMaterials.contains(adjacentAdjacentBlock.getType()) && !visitedSolidBlocks.containsKey(adjacentAdjacentBlock)) {
                                 visitedSolidBlocks.put(adjacentAdjacentBlock, adjacentBlock);
 
                                 //check Y constraints, if they exist; do only for solid blocks so that air can still travel
