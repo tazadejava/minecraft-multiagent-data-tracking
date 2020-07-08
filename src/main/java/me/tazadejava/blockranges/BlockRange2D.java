@@ -32,6 +32,18 @@ public class BlockRange2D {
         return object;
     }
 
+    public BlockRange2D clone() {
+        BlockRange2D clone = new BlockRange2D();
+        clone.startX = startX;
+        clone.startZ = startZ;
+        clone.endX = endX;
+        clone.endZ = endZ;
+        clone.startBlock = startBlock;
+        clone.endBlock = endBlock;
+
+        return clone;
+    }
+
     public void setStartBlock(Block block) {
         startBlock = block;
 

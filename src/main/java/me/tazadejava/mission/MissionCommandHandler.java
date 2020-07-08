@@ -21,16 +21,18 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
+import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.util.EulerAngle;
 import org.bukkit.util.StringUtil;
+import org.bukkit.util.Vector;
 
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
+import java.io.*;
 import java.util.*;
 
 //handles the player's commands to pass to the MissionHandler class
@@ -291,8 +293,13 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
 
                         MissionGraph.VertexPath path = mission.getMissionGraph().getShortestPathUsingEdges(type1, name1, type2, name2);
 
-                        commandSender.sendMessage(path.getPath().toString());
-                        commandSender.sendMessage("Length: " + path.getPathLength() + " blocks");
+                        if(path == null) {
+                            commandSender.sendMessage("No path found.");
+                            break;
+                        }
+
+                        commandSender.sendMessage(ChatColor.LIGHT_PURPLE + path.getPath().toString());
+                        commandSender.sendMessage(ChatColor.GREEN + "Length: " + path.getPathLength() + " blocks");
 
                         if(path.getPath().size() > 0) {
                             LinkedList<MissionGraph.MissionVertex> pathTrace = (LinkedList<MissionGraph.MissionVertex>) path.getPath().clone();
@@ -380,7 +387,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                     break;
                 case "set":
                     if(args.length < 3) {
-                        commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission set <mission name> <duration/location> [additional arguments]");
+                        commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission set <mission name> <duration/location/edges> [additional arguments]");
                         break;
                     }
                     if(!missionManager.doesMissionExist(args[1])) {
@@ -425,8 +432,57 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                             sendMissionCompletionProgress(commandSender, mission);
                             missionManager.saveData();
                             break;
+                        case "edges":
+                            if(args.length < 4) {
+                                commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission set <mission name> edges <edges filename (in UUID folder)>");
+                                break;
+                            }
+
+                            File file = new File(plugin.getDataFolder() + "/" + mission.getMissionID() + "/" + args[3]);
+
+                            if(!file.exists()) {
+                                commandSender.sendMessage(ChatColor.RED + "That file does not exist.");
+                                break;
+                            }
+
+                            mission.getMissionGraph().clearAllEdges();
+
+                            int lines = 0;
+                            try {
+                                BufferedReader reader = new BufferedReader(new FileReader(file));
+
+                                String read;
+                                while((read = reader.readLine()) != null) {
+                                    if(read.isEmpty()) {
+                                        continue;
+                                    }
+
+                                    lines++;
+                                    String[] split = read.split(" ");
+
+                                    MissionGraph.MissionVertexType type1 = split[0].charAt(0) == 'R' ? MissionGraph.MissionVertexType.ROOM : MissionGraph.MissionVertexType.DECISION;
+                                    MissionGraph.MissionVertexType type2 = split[1].charAt(0) == 'R' ? MissionGraph.MissionVertexType.ROOM : MissionGraph.MissionVertexType.DECISION;
+
+                                    String name1 = split[0].substring(1);
+                                    String name2 = split[1].substring(1);
+
+                                    mission.getMissionGraph().defineEdge(type1, name1, type2, name2);
+
+                                    commandSender.sendMessage("Defined edge between " + type1 + ": " + name1 + " and " + type2 + ": " + name2 + ".");
+                                }
+
+                                reader.close();
+                            } catch (FileNotFoundException e) {
+                                e.printStackTrace();
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+
+                            commandSender.sendMessage("Done! Defined " + lines + " edges.");
+
+                            break;
                         default:
-                            commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission set <mission name> <duration/location> [additional arguments]");
+                            commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission set <mission name> <duration/location/edges> [additional arguments]");
                             break;
                     }
                     break;
@@ -512,7 +568,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                             break;
                         case "edge":
                             if(args.length < 7) {
-                                commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission add <mission name> edge <room/decision> <room/decision name 1> <room/decision> <room/decision name 2> [time between path trace in ticks]");
+                                commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission add <mission name> edge <room/decision> <room/decision name 1> <room/decision> <room/decision name 2> [time between path trace in ticks, FOR animation]");
                                 break;
                             }
                             if(!missionManager.doesMissionExist(args[1])) {
@@ -534,16 +590,6 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                             String name1 = args[4];
                             String name2 = args[6];
 
-                            int delayTicks = 10;
-                            if(args.length > 7) {
-                                if(Utils.isInteger(args[7])) {
-                                    delayTicks = Integer.parseInt(args[7]);
-                                } else {
-                                    commandSender.sendMessage(ChatColor.RED + "Not a number.");
-                                    break;
-                                }
-                            }
-
                             if(type1 == MissionGraph.MissionVertexType.ROOM && !mission.hasRoom(name1)) {
                                 commandSender.sendMessage(ChatColor.RED + "There is no room node named " + name1 + ".");
                                 break;
@@ -562,28 +608,60 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                                 break;
                             }
 
+                            if(mission.getMissionGraph().doesEdgeExist(type1, name1, type2, name2)) {
+                                commandSender.sendMessage(ChatColor.RED + "An edge between " + name1 + " and " + name2 + " already exists!");
+                                break;
+                            }
+
                             MissionGraph.LocationPath path = mission.getMissionGraph().defineEdge(type1, name1, type2, name2);
+
+                            if(path == null) {
+                                commandSender.sendMessage(ChatColor.RED + "ERROR: A path could not be found!");
+                                break;
+                            }
+
                             commandSender.sendMessage("You defined an edge between " + type1 + ": " + name1 +  " and " + type2 + ": " + name2 + "! The distance is " + path.getPathLength() + " blocks.");
 
-                            if(path.getPathLength() > 0) {
+                            if(path.getPathLength() > 0 && args.length > 7) {
+                                int delayTicks;
+                                if(Utils.isInteger(args[7])) {
+                                    delayTicks = Integer.parseInt(args[7]);
+                                } else {
+                                    commandSender.sendMessage(ChatColor.RED + "Not a number.");
+                                    break;
+                                }
+
                                 LinkedList<Location> pathTrace = (LinkedList<Location>) path.getPath().clone();
                                 Location firstLoc = pathTrace.poll();
-                                Entity ent = firstLoc.getWorld().spawnEntity(firstLoc, EntityType.ARMOR_STAND);
+                                ArmorStand ent = (ArmorStand) firstLoc.getWorld().spawnEntity(firstLoc, EntityType.ARMOR_STAND);
+
+                                ent.getEquipment().setHelmet(new ItemStack(Material.DRAGON_HEAD));
 
                                 commandSender.sendMessage("Showing path...");
                                 new BukkitRunnable() {
 
+                                    int waitCount = 0;
+
                                     @Override
                                     public void run() {
                                         if (pathTrace.isEmpty()) {
-                                            cancel();
-                                            ent.remove();
-                                            commandSender.sendMessage("Path show ended.");
+                                            if(waitCount < 3) {
+                                                waitCount++;
+                                            } else {
+                                                cancel();
+                                                ent.remove();
+                                                commandSender.sendMessage("Path show ended.");
+                                            }
                                             return;
                                         }
 
-                                        commandSender.sendMessage("Path in progress: " + (path.getPath().size() - pathTrace.size()) + "/" + path.getPath().size());
+                                        commandSender.sendMessage("Path in progress: " + (path.getPath().size() - pathTrace.size() + 1) + "/" + path.getPath().size());
                                         ent.teleport(pathTrace.poll());
+
+                                        if(!pathTrace.isEmpty()) {
+                                            EulerAngle nextPathPose = vectorToEulerAngle(ent.getLocation().clone().toVector().subtract(pathTrace.peek().toVector()));
+                                            ent.setHeadPose(nextPathPose);
+                                        }
                                     }
                                 }.runTaskTimer(plugin, 20L, delayTicks);
                             }
@@ -755,6 +833,39 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
             }
         }
         return true;
+    }
+
+    //untested, for experimental and demonstration purposes only; todo: currently does not work as intended
+    private EulerAngle vectorToEulerAngle(Vector v) {
+        double x = v.getX();
+        double y = v.getY();
+        double z = v.getZ();
+
+        double xz = Math.sqrt(x*x + z*z);
+
+        double eulX;
+        if(x < 0) {
+            if(y == 0) {
+                eulX = Math.PI*0.5;
+            } else {
+                eulX = Math.atan(xz/y)+Math.PI;
+            }
+        } else {
+            eulX = Math.atan(y/xz)+Math.PI*0.5;
+        }
+
+        double eulY;
+        if(x == 0) {
+            if(z > 0) {
+                eulY = Math.PI;
+            } else {
+                eulY = 0;
+            }
+        } else {
+            eulY = Math.atan(z/x)+Math.PI*0.5;
+        }
+
+        return new EulerAngle(eulX, eulY, 0);
     }
 
     private void sendMissionCompletionProgress(CommandSender sender, Mission mission) {

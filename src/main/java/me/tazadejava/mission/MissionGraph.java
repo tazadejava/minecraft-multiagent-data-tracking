@@ -1,5 +1,7 @@
 package me.tazadejava.mission;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import me.tazadejava.blockranges.BlockRange2D;
 import org.bukkit.Bukkit;
@@ -31,6 +33,21 @@ public class MissionGraph {
         @Override
         public String toString() {
             return type + " " + name;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            MissionVertex that = (MissionVertex) o;
+            return type == that.type &&
+                    Objects.equals(location, that.location) &&
+                    Objects.equals(name, that.name);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(type, location, name);
         }
     }
 
@@ -96,13 +113,35 @@ public class MissionGraph {
     public MissionGraph(Mission mission, JsonObject data) {
         this.mission = mission;
 
-        //TODO: LOAD EDGE DATA
+        for(Map.Entry<String, JsonElement> entry : data.entrySet()) {
+            String[] keySplit = entry.getKey().split(" ");
+            MissionVertex vertex = getVertex(MissionVertexType.valueOf(keySplit[0]), keySplit[1]);
+
+            edges.put(vertex, new HashSet<>());
+            edgeWeights.put(vertex, new HashMap<>());
+
+            for(Map.Entry<String, JsonElement> neighborEntry : entry.getValue().getAsJsonObject().entrySet()) {
+                String[] neighborKeySplit = neighborEntry.getKey().split(" ");
+                MissionVertex neighborVertex = getVertex(MissionVertexType.valueOf(neighborKeySplit[0]), neighborKeySplit[1]);
+
+                edges.get(vertex).add(neighborVertex);
+                edgeWeights.get(vertex).put(neighborVertex, neighborEntry.getValue().getAsDouble());
+            }
+        }
     }
 
     public JsonObject save() {
         JsonObject data = new JsonObject();
 
-        //TODO: SAVE THE EDGE DATA
+        for(MissionVertex edge : edges.keySet()) {
+            JsonObject neighbors = new JsonObject();
+
+            for(MissionVertex adjacency : edges.get(edge)) {
+                neighbors.addProperty(adjacency.type + " " + adjacency.name, edgeWeights.get(edge).get(adjacency));
+            }
+
+            data.add(edge.type + " " + edge.name, neighbors);
+        }
 
         return data;
     }
@@ -136,32 +175,58 @@ public class MissionGraph {
         return vertex;
     }
 
+    private double getManhattanDistance(Location begin, Location end) {
+        return Math.abs(begin.getBlockX() - end.getBlockX()) + Math.abs(begin.getBlockZ() - end.getBlockZ());
+    }
+
     //this method will traverse A* style to find a path from the begin to end, and return the distance
     private LocationPath calculatePathBetweenNodes(MissionVertex begin, MissionVertex end) {
-        //TODO: implement a A* inspired algorithm to find path to end or a room bounds
         //general logic: distance-biased four-way BFS-like algorithm that tries to find the closest path from begin to end, where if any are rooms, then we will end when the algorithm finds the bounds of the room
+
+        //heuristics cost calculation
+        HashMap<Location, Double> totalLocationCosts = new HashMap<>();
+        HashMap<Location, Integer> numberOfBlocksFromBegin = new HashMap<>();
 
         //contains foot level locations that have an air above it
         PriorityQueue<Location> openList = new PriorityQueue<>(new Comparator<Location>() {
             @Override
             public int compare(Location o1, Location o2) {
-                return Double.compare(o1.distanceSquared(end.location), o2.distanceSquared(end.location));
+                return Double.compare(totalLocationCosts.get(o1), totalLocationCosts.get(o2));
             }
         });
-
-        openList.add(begin.location);
-
-        HashMap<Location, Location> parents = new HashMap<>();
-        parents.put(begin.location, null);
 
         Location endLocation = null;
         double distance = 0;
 
-        BlockRange2D endBounds = mission.getRoom(end.name).getBounds();
+        //check for if begin is in between multiple blocks, then place it on a block
+        Location beginLoc = begin.location.clone();
+        if(beginLoc.getX() == (int) beginLoc.getX()) {
+            if(beginLoc.getZ() == (int) beginLoc.getZ()) {
+                beginLoc.add(0.5, 0, 0.5);
+                distance += Math.sqrt(2 * Math.pow(0.5, 2));
+            } else {
+                beginLoc.add(0.5, 0, 0);
+                distance += 0.5;
+            }
+        } else if(beginLoc.getZ() == (int) beginLoc.getZ()) {
+            beginLoc.add(0, 0, 0.5);
+            distance += 0.5;
+        }
+
+        HashMap<Location, Location> parents = new HashMap<>();
+
+        openList.add(beginLoc);
+        parents.put(beginLoc, null);
+        totalLocationCosts.put(beginLoc, getManhattanDistance(beginLoc, end.location));
+        numberOfBlocksFromBegin.put(beginLoc, 0);
+
+        BlockRange2D endBounds = mission.getRoom(end.name).getBounds().clone();
+        //don't count walls
+        endBounds.expand(-1);
 
         //this algorithm will look for possible locations at same level, one up, and one down.
         //it will not account for possible stepping locations more than one block up or down.
-        int timeout = 500;
+        int timeout = 5000; //5000 is more than enough for the Sparky map, and most other general cases. For reference, Sparky doesn't traverse to less than 4000 between any two nodes, and typically only takes about 400-600 for far distances
         while(!openList.isEmpty()) {
             timeout--;
             if(timeout <= 0) {
@@ -173,6 +238,7 @@ public class MissionGraph {
             //check for end goal
             if(end.type == MissionVertexType.ROOM) {
                 if(endBounds.isInRange(currentLoc)) {
+                    distance += end.location.distance(currentLoc);
                     endLocation = currentLoc;
                     break;
                 }
@@ -195,6 +261,9 @@ public class MissionGraph {
                     if(!transparentMaterials.contains(adjacentLoc.clone().add(0, -1, 0).getBlock().getType())) { //under foot level
                         if (transparentMaterials.contains(adjacentLoc.getBlock().getType())) { //foot level
                             if (transparentMaterials.contains(adjacentLoc.clone().add(0, 1, 0).getBlock().getType())) { //eye level
+                                int adjacentBlocksFromStart = numberOfBlocksFromBegin.get(currentLoc) + 1;
+                                numberOfBlocksFromBegin.put(adjacentLoc, adjacentBlocksFromStart);
+                                totalLocationCosts.put(adjacentLoc, adjacentBlocksFromStart + getManhattanDistance(adjacentLoc, end.location));
                                 openList.add(adjacentLoc);
                                 parents.put(adjacentLoc, currentLoc);
                                 break;
@@ -215,7 +284,15 @@ public class MissionGraph {
             distance++;
         }
 
+        distance = Math.round(distance * 100) / 100d;
+
         return new LocationPath(path, distance);
+    }
+
+    public boolean doesEdgeExist(MissionVertexType vertexType1, String name1, MissionVertexType vertexType2, String name2) {
+        MissionVertex vertex1 = getVertex(vertexType1, name1);
+        MissionVertex vertex2 = getVertex(vertexType2, name2);
+        return edges.containsKey(vertex1) && edges.get(vertex1).contains(vertex2);
     }
 
     //returns distance between two points
@@ -244,6 +321,10 @@ public class MissionGraph {
 
         LocationPath path = calculatePathBetweenNodes(begin, end);
 
+        if(path == null) {
+            return null;
+        }
+
         edgeWeights.get(begin).put(end, path.pathLength);
         edgeWeights.get(end).put(begin, path.pathLength);
 
@@ -254,7 +335,76 @@ public class MissionGraph {
     public VertexPath getShortestPathUsingEdges(MissionVertexType vertexType1, String name1, MissionVertexType vertexType2, String name2) {
         MissionVertex begin = getVertex(vertexType1, name1);
         MissionVertex end = getVertex(vertexType2, name2);
-        //TODO: IMPLEMENT DIJKSTRA'S ALGORITHM
-        return null;
+
+        HashMap<MissionVertex, Double> distanceToStart = new HashMap<>();
+
+        PriorityQueue<MissionVertex> openList = new PriorityQueue<>(new Comparator<MissionVertex>() {
+            @Override
+            public int compare(MissionVertex o1, MissionVertex o2) {
+                return Double.compare(distanceToStart.get(o1), distanceToStart.get(o2));
+            }
+        });
+
+        HashMap<MissionVertex, MissionVertex> parents = new HashMap<>();
+
+        distanceToStart.put(begin, 0d);
+        openList.add(begin);
+        parents.put(begin, null);
+
+        boolean foundEnd = false;
+
+        while(!openList.isEmpty()) {
+            MissionVertex currentVertex = openList.poll();
+
+            if(currentVertex == end) {
+                foundEnd = true;
+                break;
+            }
+
+            if (edges.containsKey(currentVertex)) {
+                for (MissionVertex adjacentVertex : edges.get(currentVertex)) {
+                    double distance = distanceToStart.get(currentVertex) + edgeWeights.get(currentVertex).get(adjacentVertex);
+
+                    if(!distanceToStart.containsKey(adjacentVertex)) {
+                        distanceToStart.put(adjacentVertex, distance);
+                        openList.add(adjacentVertex);
+
+                        parents.put(adjacentVertex, currentVertex);
+                    } else if(distance < distanceToStart.get(adjacentVertex)) {
+                        distanceToStart.put(adjacentVertex, distance);
+
+                        openList.remove(adjacentVertex);
+                        openList.add(adjacentVertex);
+
+                        parents.put(adjacentVertex, currentVertex);
+                    }
+                }
+            }
+        }
+
+        if(!foundEnd) {
+            return null;
+        }
+
+        LinkedList<MissionVertex> path = new LinkedList<>();
+        double distance = 0;
+
+        MissionVertex nextLoc = end;
+        do {
+            path.addFirst(nextLoc);
+
+            if(parents.get(nextLoc) != null) {
+                distance += edgeWeights.get(nextLoc).get(parents.get(nextLoc));
+            }
+        } while((nextLoc = parents.get(nextLoc)) != null);
+
+        distance = Math.round(distance * 100) / 100d;
+
+        return new VertexPath(path, distance);
+    }
+
+    public void clearAllEdges() {
+        edges.clear();
+        edgeWeights.clear();
     }
 }

@@ -23,6 +23,7 @@ Spigot plugin developed for Genesis Recommendation System UROP, Summer of 2020.
     - When you want to reset the blocks to normal, type "/mission raycastreset"
 - "/mission raycastdiscrete"
     - This is like the first one, but it will only raycast once before resetting the blocks to normal, then it raycasts again.
+    - WARNING: due to the way Minecraft renders client-side blocks, this flickers extremely quickly. I would not recommend using this command if this would bother you, as it can be visually extremely difficult. Use either the raycast command above or see the raycastonce command below for alternatives.
 - "/mission raycastonce"
     - This will only run the algorithm once, so you can see what is currently visible at your current view.
     - Again, type "/mission raycastreset" to reset the blocks to normal.
