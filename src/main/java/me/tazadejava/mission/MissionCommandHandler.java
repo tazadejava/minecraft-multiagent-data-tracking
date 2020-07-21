@@ -6,6 +6,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import me.tazadejava.actiontracker.ActionTrackerPlugin;
 import me.tazadejava.actiontracker.Utils;
+import me.tazadejava.analyzer.PlayerAnalyzer;
 import me.tazadejava.blockranges.BlockRange2D;
 import me.tazadejava.blockranges.SelectionWand;
 import me.tazadejava.blockranges.SpecialItem;
@@ -26,12 +27,18 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.MapMeta;
 import org.bukkit.inventory.meta.SkullMeta;
+import org.bukkit.map.MapCanvas;
+import org.bukkit.map.MapRenderer;
+import org.bukkit.map.MapView;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.EulerAngle;
 import org.bukkit.util.StringUtil;
 import org.bukkit.util.Vector;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
 import java.io.*;
 import java.util.*;
 
@@ -325,7 +332,6 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                         }
                     }
                     break;
-
                 case "create":
                     if(args.length < 2) {
                         commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission create <mission name>");
@@ -825,6 +831,37 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                         }
                     } else {
                         p.sendMessage(ChatColor.RED + "Unknown item!");
+                    }
+                    break;
+                case "map":
+                    if(commandSender instanceof Player) {
+                        p = (Player) commandSender;
+
+                        MapView map = Bukkit.createMap(p.getWorld());
+                        map.getRenderers().clear();
+                        map.setLocked(true);
+                        map.setUnlimitedTracking(false);
+                        map.setScale(MapView.Scale.NORMAL);
+                        map.addRenderer(new MapRenderer() {
+                            @Override
+                            public void render(MapView map, MapCanvas canvas, Player player) {
+                                try {
+                                    InputStream stream = getClass().getClassLoader().getResourceAsStream("sparky_map.png");
+                                    BufferedImage image = ImageIO.read(stream);
+                                    canvas.drawImage(0, 0, image);
+                                    stream.close();
+                                } catch (IOException e) {
+                                    e.printStackTrace();
+                                }
+                            }
+                        });
+
+                        ItemStack mapItem = new ItemStack(Material.FILLED_MAP);
+                        MapMeta meta = (MapMeta) mapItem.getItemMeta();
+                        meta.setMapView(map);
+                        mapItem.setItemMeta(meta);
+
+                        p.getInventory().addItem(mapItem);
                     }
                     break;
                 default:

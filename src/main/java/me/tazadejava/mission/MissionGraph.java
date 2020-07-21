@@ -17,7 +17,7 @@ public class MissionGraph {
         ROOM, DECISION
     }
 
-    public class MissionVertex {
+    public static class MissionVertex {
 
         public MissionVertexType type;
         public Location location;
@@ -41,13 +41,12 @@ public class MissionGraph {
             if (o == null || getClass() != o.getClass()) return false;
             MissionVertex that = (MissionVertex) o;
             return type == that.type &&
-                    Objects.equals(location, that.location) &&
                     Objects.equals(name, that.name);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(type, location, name);
+            return Objects.hash(type, name);
         }
     }
 
@@ -128,6 +127,24 @@ public class MissionGraph {
                 edgeWeights.get(vertex).put(neighborVertex, neighborEntry.getValue().getAsDouble());
             }
         }
+    }
+
+    private MissionGraph() {
+
+    }
+
+    public MissionGraph cloneGraphOnly() {
+        MissionGraph graph = new MissionGraph();
+
+        graph.roomVertices = roomVertices;
+        graph.decisionVertices = decisionVertices;
+
+        for(MissionVertex vertex : edges.keySet()) {
+            graph.edges.put(vertex, new HashSet<>(edges.get(vertex)));
+            graph.edgeWeights.put(vertex, new HashMap<>(edgeWeights.get(vertex)));
+        }
+
+        return graph;
     }
 
     public JsonObject save() {
@@ -336,6 +353,10 @@ public class MissionGraph {
         MissionVertex begin = getVertex(vertexType1, name1);
         MissionVertex end = getVertex(vertexType2, name2);
 
+        return getShortestPathUsingEdges(begin, end);
+    }
+
+    public VertexPath getShortestPathUsingEdges(MissionVertex begin, MissionVertex end) {
         HashMap<MissionVertex, Double> distanceToStart = new HashMap<>();
 
         PriorityQueue<MissionVertex> openList = new PriorityQueue<>(new Comparator<MissionVertex>() {
@@ -401,6 +422,33 @@ public class MissionGraph {
         distance = Math.round(distance * 100) / 100d;
 
         return new VertexPath(path, distance);
+    }
+
+    public Set<MissionVertex> getNeighbors(MissionVertex vertex) {
+        return edges.getOrDefault(getVertex(vertex.type, vertex.name), null);
+    }
+
+    public boolean modifyEdgeWeight(MissionVertex begin, MissionVertex end, double weight) {
+        if(mission != null) { //must be a copy of the mission graph; cannot modify original
+            return false;
+        }
+        if(!edgeWeights.containsKey(begin)) {
+            return false;
+        }
+        if(!edgeWeights.get(begin).containsKey(end)) {
+            return false;
+        }
+
+        edgeWeights.get(begin).put(end, weight);
+        return true;
+    }
+
+    public double getEdgeWeight(MissionVertex begin, MissionVertex end) {
+        return edgeWeights.get(begin).get(end);
+    }
+
+    public Collection<MissionVertex> getRoomVertices() {
+        return roomVertices.values();
     }
 
     public void clearAllEdges() {
