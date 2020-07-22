@@ -23,6 +23,7 @@ me/tazadejava/mission/MissionGraph$MissionVertex.class
 me/tazadejava/mission/MissionGraph.class
 me/tazadejava/statstracker/EnhancedStatsTracker.class
 me/tazadejava/mission/MissionCommandHandler$6.class
+me/tazadejava/analyzer/PlayerAnalyzer$DecisionTraversal.class
 me/tazadejava/mission/MissionRoom.class
 me/tazadejava/mission/MissionCommandHandler$3.class
 me/tazadejava/mission/MissionManager$1.class

@@ -21,6 +21,21 @@ import java.util.stream.Collectors;
 // - save the json file continuously and have an external process check for changes, then perform similar actions to what is being done here, but search the JSON file instead of casting
 public class PlayerAnalyzer {
 
+    public class DecisionTraversal {
+
+        public MissionGraph.MissionVertex beginVertex, endVertex;
+        public double pathLength;
+        public long pathTime;
+
+        public DecisionTraversal(MissionGraph graph, MissionGraph.MissionVertex beginVertex, MissionGraph.MissionVertex endVertex, long pathTime) {
+            this.beginVertex = beginVertex;
+            this.endVertex = endVertex;
+            this.pathTime = pathTime;
+
+            pathLength = graph.getShortestPathUsingEdges(beginVertex.type, beginVertex.name, endVertex.type, endVertex.name).getPathLength();
+        }
+    }
+
     public static final Set<Material> VICTIM_BLOCKS = new HashSet<>(Arrays.asList(Material.PRISMARINE, Material.GOLD_BLOCK));
 
     private Player player;
@@ -45,6 +60,13 @@ public class PlayerAnalyzer {
     private MissionGraph.MissionVertex lastVertex;
     private Set<MissionGraph.MissionVertex> visitedVertices;
     private Set<MissionGraph.MissionVertex> unvisitedRooms;
+
+    //roomSpeed: average MS in each room
+    //decisionSpeed: average blocks per MS
+    private double averagePlayerDecisionTraversalSpeed, averagePlayerRoomTriageSpeed;
+    private List<DecisionTraversal> playerDecisionSpeeds = new ArrayList<>();
+    private List<Long> playerRoomTriageSpeeds = new ArrayList<>();
+    private long lastRoomEnterTime = -1, lastDecisionEnterTime = -1;
 
     public PlayerAnalyzer(Player player, Mission mission) {
         this.player = player;
@@ -182,7 +204,7 @@ public class PlayerAnalyzer {
         }
         double roomPotentialWeight = Math.sqrt(maxDistanceToPlayer);
 
-        //modify weights to accomodate for potential
+        //modify weights to accomodate for potential; this will allow for graph path to be weighted based on specific factors
 //        for(MissionGraph.MissionVertex roomPotential : roomPotentials.keySet()) {
 //            for(MissionGraph.MissionVertex neighbor : graph.getNeighbors(roomPotential)) {
 //                graph.modifyEdgeWeight(roomPotential, neighbor, graph.getEdgeWeight(roomPotential, neighbor) + Math.pow((1 - roomPotentials.get(roomPotential)) * roomPotentialWeight, 2));
@@ -317,46 +339,52 @@ public class PlayerAnalyzer {
             if(!playerVertex.equals(lastVertex)) {
                 //best path
 
-                long start = System.currentTimeMillis();
-                HashMap<MissionGraph.MissionVertex, Double> roomPotentials = calculateRoomPotentials(playerVertex);
-                List<MissionGraph.MissionVertex> bestPath = calculateBestPath(playerVertex, roomPotentials);
-                Bukkit.broadcastMessage(ChatColor.GRAY + "TOOK " + (System.currentTimeMillis() - start));
+//                HashMap<MissionGraph.MissionVertex, Double> roomPotentials = calculateRoomPotentials(playerVertex);
+//                List<MissionGraph.MissionVertex> bestPath = calculateBestPath(playerVertex, roomPotentials);
+//
+//                List<String> bestPathFormat = new ArrayList<>();
+//
+//                int decisionShow = 5;
+//                boolean first = true;
+//                for(MissionGraph.MissionVertex vertex : bestPath) {
+//                    if(first) {
+//                        first = false;
+//                        bestPathFormat.add(ChatColor.DARK_GRAY + vertex.toString());
+//                        continue;
+//                    }
+//
+//                    ChatColor color = null;
+//                    if(vertex.type == MissionGraph.MissionVertexType.ROOM) {
+//                        if(visitedVertices.contains(vertex)) {
+//                            color = ChatColor.AQUA;
+//                        } else {
+//                            color = ChatColor.GOLD;
+//                        }
+//                        decisionShow--;
+//                    } else {
+//                        if(decisionShow <= 0) {
+//                            continue;
+//                        }
+//                        color = ChatColor.GRAY;
+//                    }
+//
+//                    bestPathFormat.add(color + vertex.toString());
+//                }
+//
+//                Bukkit.broadcastMessage("BEST PATH: " + bestPathFormat.toString());
 
-                List<String> bestPathFormat = new ArrayList<>();
+                //analyze player speed
+                Bukkit.broadcastMessage("CURRENT NODE: " + playerVertex);
+                calculatePlayerSpeed(mission.getMissionGraph(), lastVertex, playerVertex);
 
-                int decisionShow = 5;
-                boolean first = true;
-                for(MissionGraph.MissionVertex vertex : bestPath) {
-                    if(first) {
-                        first = false;
-                        bestPathFormat.add(ChatColor.DARK_GRAY + vertex.toString());
-                        continue;
-                    }
-
-                    ChatColor color = null;
-                    if(vertex.type == MissionGraph.MissionVertexType.ROOM) {
-                        if(visitedVertices.contains(vertex)) {
-                            color = ChatColor.AQUA;
-                        } else {
-                            color = ChatColor.GOLD;
-                        }
-                        decisionShow--;
-                    } else {
-                        if(decisionShow <= 0) {
-                            continue;
-                        }
-                        color = ChatColor.GRAY;
-                    }
-
-                    bestPathFormat.add(color + vertex.toString());
-                }
-
-                Bukkit.broadcastMessage("BEST PATH: " + bestPathFormat.toString());
+                Bukkit.broadcastMessage(ChatColor.YELLOW + "AVERAGE HALLWAY SPEED: " + (averagePlayerDecisionTraversalSpeed * 1000) + " blocks/sec");
+                Bukkit.broadcastMessage(ChatColor.DARK_GREEN + "AVERAGE ROOM TIME: " + (averagePlayerRoomTriageSpeed / 1000) + " sec in a room");
 
                 //analyze current player location
                 visitedVertices.add(playerVertex);
                 unvisitedRooms.remove(playerVertex);
                 lastVertex = playerVertex;
+
 //                player.sendMessage("Your current node is " + ChatColor.DARK_PURPLE + playerVertex.type + ": " + playerVertex.name);
 
                 Set<MissionGraph.MissionVertex> neighbors = graph.getNeighbors(playerVertex);
@@ -383,6 +411,59 @@ public class PlayerAnalyzer {
                 }
             }
         }
+    }
+
+    private void calculatePlayerSpeed(MissionGraph graph, MissionGraph.MissionVertex lastVertex, MissionGraph.MissionVertex currentVertex) {
+        if(currentVertex.type == MissionGraph.MissionVertexType.ROOM) {
+            lastDecisionEnterTime = -1;
+            if(lastRoomEnterTime == -1) {
+                //has not entered room yet
+                lastRoomEnterTime = System.currentTimeMillis();
+            } else {
+                //entered a room before, going to another room
+                playerRoomTriageSpeeds.add(System.currentTimeMillis() - lastRoomEnterTime);
+                lastRoomEnterTime = System.currentTimeMillis();
+                recalculateRoomTriageAverage();
+            }
+        } else {
+            if(lastDecisionEnterTime == -1) {
+                lastDecisionEnterTime = System.currentTimeMillis();
+            } else if(lastVertex != null) {
+                //decision to decision node
+                playerDecisionSpeeds.add(new DecisionTraversal(graph, lastVertex, currentVertex, System.currentTimeMillis() - lastDecisionEnterTime));
+                lastDecisionEnterTime = System.currentTimeMillis();
+                recalculateDecisionTraversalAverage();
+            }
+
+            if(lastVertex != null && lastVertex.type == MissionGraph.MissionVertexType.ROOM) {
+                //just exited a room
+                playerRoomTriageSpeeds.add(System.currentTimeMillis() - lastRoomEnterTime);
+                lastRoomEnterTime = -1;
+                recalculateRoomTriageAverage();
+            }
+        }
+    }
+
+    private void recalculateRoomTriageAverage() {
+//        Bukkit.broadcastMessage("ROOM TRIAGE " + playerRoomTriageSpeeds.get(playerRoomTriageSpeeds.size() - 1));
+        averagePlayerRoomTriageSpeed = 0;
+        for(long roomTime : playerRoomTriageSpeeds) {
+            averagePlayerRoomTriageSpeed += roomTime;
+        }
+
+        averagePlayerRoomTriageSpeed /= playerRoomTriageSpeeds.size();
+    }
+
+    private void recalculateDecisionTraversalAverage() {
+//        Bukkit.broadcastMessage("DECISION TRAVERSAL " + playerDecisionSpeeds.get(playerDecisionSpeeds.size() - 1).pathTime);
+        averagePlayerDecisionTraversalSpeed = 0;
+        long totalTime = 0;
+        for(DecisionTraversal traversal : playerDecisionSpeeds) {
+            averagePlayerDecisionTraversalSpeed += traversal.pathLength;
+            totalTime += traversal.pathTime;
+        }
+
+        averagePlayerDecisionTraversalSpeed /= totalTime;
     }
 
     private List<Map.Entry<MissionGraph.MissionVertex, MissionGraph.VertexPath>> getPathsToUnvisitedRooms(MissionGraph.MissionVertex currentVertex) {

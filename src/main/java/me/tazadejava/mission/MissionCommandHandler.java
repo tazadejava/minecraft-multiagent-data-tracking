@@ -852,7 +852,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                                     stream.close();
                                 } catch (IOException e) {
                                     e.printStackTrace();
-                                }
+                                } catch(IllegalArgumentException ex) {}
                             }
                         });
 
