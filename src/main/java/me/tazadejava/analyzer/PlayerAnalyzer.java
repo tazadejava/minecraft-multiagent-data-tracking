@@ -213,11 +213,10 @@ public class PlayerAnalyzer {
 
         //find shortest path using tree estimate
 
-        //first, calculate the path from any room to another room using Johnson's AND player's node if it is not a room node
+        //first, calculate the path from any room to another room using APSP weight algorithm AND player's node if it is not a room node
         //store room to decision nodes mapping
 
         List<MissionGraph.MissionVertex> nodeCandidates = new ArrayList<>();
-        HashMap<MissionGraph.MissionVertex, HashMap<MissionGraph.MissionVertex, Double>> roomDistances = new HashMap<>();
         HashMap<MissionGraph.MissionVertex, HashMap<MissionGraph.MissionVertex, MissionGraph.VertexPath>> roomPaths = new HashMap<>();
 
         for(MissionGraph.MissionVertex roomVertex : graph.getRoomVertices()) {
@@ -231,17 +230,7 @@ public class PlayerAnalyzer {
         }
 
         for(MissionGraph.MissionVertex beginNode : nodeCandidates) {
-            roomDistances.put(beginNode, new HashMap<>());
-            roomPaths.put(beginNode, new HashMap<>());
-
-            for(MissionGraph.MissionVertex endNode : nodeCandidates) {
-                if(!beginNode.equals(endNode)) {
-                    MissionGraph.VertexPath path = graph.getShortestPathUsingEdges(beginNode.type, beginNode.name, endNode.type, endNode.name);
-
-                    roomDistances.get(beginNode).put(endNode, path.getPathLength());
-                    roomPaths.get(beginNode).put(endNode, path);
-                }
-            }
+            roomPaths.put(beginNode, graph.getShortestPathToAllVertices(beginNode.type, beginNode.name));
         }
 
         //now, recursively find the next best room from any current room (starting at player's node)
@@ -262,13 +251,13 @@ public class PlayerAnalyzer {
             for(MissionGraph.MissionVertex endVertex : nodeCandidates) {
                 if(!endVertex.equals(currentVertex) && !visitedVertices.contains(endVertex)) {
                     if(visitedVertices.contains(endVertex)) {
-                        double distance = roomDistances.get(currentVertex).get(endVertex);
+                        double distance = roomPaths.get(currentVertex).get(endVertex).getPathLength();
                         if(distance < minExplored) {
                             minExplored = distance;
                             minVertexExplored = endVertex;
                         }
                     } else {
-                        double distance = roomDistances.get(currentVertex).get(endVertex);
+                        double distance = roomPaths.get(currentVertex).get(endVertex).getPathLength();
                         if(distance < minUnexplored) {
                             minUnexplored = distance;
                             minVertexUnexplored = endVertex;
@@ -301,7 +290,7 @@ public class PlayerAnalyzer {
         for(int i = 0; i < roomPath.size() - 1; i++) {
             path = roomPaths.get(roomPath.get(i)).get(roomPath.get(i + 1));
             reconstructedPath.addAll(path.getPath().subList(0, path.getPath().size() - 1));
-            totalPathLength += roomDistances.get(roomPath.get(i)).get(roomPath.get(i + 1));
+            totalPathLength += roomPaths.get(roomPath.get(i)).get(roomPath.get(i + 1)).getPathLength();
         }
 
         if(path != null) {
@@ -339,46 +328,46 @@ public class PlayerAnalyzer {
             if(!playerVertex.equals(lastVertex)) {
                 //best path
 
-//                HashMap<MissionGraph.MissionVertex, Double> roomPotentials = calculateRoomPotentials(playerVertex);
-//                List<MissionGraph.MissionVertex> bestPath = calculateBestPath(playerVertex, roomPotentials);
-//
-//                List<String> bestPathFormat = new ArrayList<>();
-//
-//                int decisionShow = 5;
-//                boolean first = true;
-//                for(MissionGraph.MissionVertex vertex : bestPath) {
-//                    if(first) {
-//                        first = false;
-//                        bestPathFormat.add(ChatColor.DARK_GRAY + vertex.toString());
-//                        continue;
-//                    }
-//
-//                    ChatColor color = null;
-//                    if(vertex.type == MissionGraph.MissionVertexType.ROOM) {
-//                        if(visitedVertices.contains(vertex)) {
-//                            color = ChatColor.AQUA;
-//                        } else {
-//                            color = ChatColor.GOLD;
-//                        }
-//                        decisionShow--;
-//                    } else {
-//                        if(decisionShow <= 0) {
-//                            continue;
-//                        }
-//                        color = ChatColor.GRAY;
-//                    }
-//
-//                    bestPathFormat.add(color + vertex.toString());
-//                }
-//
-//                Bukkit.broadcastMessage("BEST PATH: " + bestPathFormat.toString());
+                HashMap<MissionGraph.MissionVertex, Double> roomPotentials = calculateRoomPotentials(playerVertex);
+                List<MissionGraph.MissionVertex> bestPath = calculateBestPath(playerVertex, roomPotentials);
+
+                List<String> bestPathFormat = new ArrayList<>();
+
+                int decisionShow = 5;
+                boolean first = true;
+                for(MissionGraph.MissionVertex vertex : bestPath) {
+                    if(first) {
+                        first = false;
+                        bestPathFormat.add(ChatColor.DARK_GRAY + vertex.toString());
+                        continue;
+                    }
+
+                    ChatColor color = null;
+                    if(vertex.type == MissionGraph.MissionVertexType.ROOM) {
+                        if(visitedVertices.contains(vertex)) {
+                            color = ChatColor.AQUA;
+                        } else {
+                            color = ChatColor.GOLD;
+                        }
+                        decisionShow--;
+                    } else {
+                        if(decisionShow <= 0) {
+                            continue;
+                        }
+                        color = ChatColor.GRAY;
+                    }
+
+                    bestPathFormat.add(color + vertex.toString());
+                }
+
+                Bukkit.broadcastMessage("BEST PATH: " + bestPathFormat.toString());
 
                 //analyze player speed
-                Bukkit.broadcastMessage("CURRENT NODE: " + playerVertex);
+//                Bukkit.broadcastMessage("CURRENT NODE: " + playerVertex);
                 calculatePlayerSpeed(mission.getMissionGraph(), lastVertex, playerVertex);
 
-                Bukkit.broadcastMessage(ChatColor.YELLOW + "AVERAGE HALLWAY SPEED: " + (averagePlayerDecisionTraversalSpeed * 1000) + " blocks/sec");
-                Bukkit.broadcastMessage(ChatColor.DARK_GREEN + "AVERAGE ROOM TIME: " + (averagePlayerRoomTriageSpeed / 1000) + " sec in a room");
+//                Bukkit.broadcastMessage(ChatColor.YELLOW + "AVERAGE HALLWAY SPEED: " + (averagePlayerDecisionTraversalSpeed * 1000) + " blocks/sec");
+//                Bukkit.broadcastMessage(ChatColor.DARK_GREEN + "AVERAGE ROOM TIME: " + (averagePlayerRoomTriageSpeed / 1000) + " sec in a room");
 
                 //analyze current player location
                 visitedVertices.add(playerVertex);
@@ -464,26 +453,6 @@ public class PlayerAnalyzer {
         }
 
         averagePlayerDecisionTraversalSpeed /= totalTime;
-    }
-
-    private List<Map.Entry<MissionGraph.MissionVertex, MissionGraph.VertexPath>> getPathsToUnvisitedRooms(MissionGraph.MissionVertex currentVertex) {
-        LinkedHashMap<MissionGraph.MissionVertex, MissionGraph.VertexPath> paths = new LinkedHashMap<>();
-
-        for(MissionGraph.MissionVertex room : unvisitedRooms) {
-            paths.put(room, mission.getMissionGraph().getShortestPathUsingEdges(currentVertex, room));
-        }
-
-        //sort by distance
-
-        List<Map.Entry<MissionGraph.MissionVertex, MissionGraph.VertexPath>> pathsSorted = new ArrayList<>(paths.entrySet());
-        pathsSorted.sort(new Comparator<Map.Entry<MissionGraph.MissionVertex, MissionGraph.VertexPath>>() {
-            @Override
-            public int compare(Map.Entry<MissionGraph.MissionVertex, MissionGraph.VertexPath> o1, Map.Entry<MissionGraph.MissionVertex, MissionGraph.VertexPath> o2) {
-                return Double.compare(o1.getValue().getPathLength(), o2.getValue().getPathLength());
-            }
-        });
-
-        return pathsSorted;
     }
 
     private void analyzeVictimTarget(EnhancedStatsTracker.LastStatsSnapshot lastStats) {

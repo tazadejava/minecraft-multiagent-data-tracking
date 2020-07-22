@@ -283,6 +283,10 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                     restoreBlocks(commandSender);
                     break;
 
+                case "test":
+                    missionManager.getMission(args[1]).getMissionGraph().getShortestPathToAllVertices(MissionGraph.MissionVertexType.ROOM, "0");
+                    break;
+
                 case "graphtest": //testing command to find distances between any two nodes; unsafe to crashing if supplied incorrect arguments
                     if(args.length < 6) {
                         commandSender.sendMessage("/mission graphtest <mission name> <room/decision> <name> <room/decision> <name>");

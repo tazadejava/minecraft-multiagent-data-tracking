@@ -5,6 +5,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import me.tazadejava.blockranges.BlockRange2D;
 import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
 
@@ -348,6 +349,98 @@ public class MissionGraph {
         return path;
     }
 
+    //proper dijkstra's algorithm
+    public HashMap<MissionVertex, VertexPath> getShortestPathToAllVertices(MissionVertexType beginVertexType, String beginVertexName) {
+        MissionVertex begin = getVertex(beginVertexType, beginVertexName);
+
+        HashMap<MissionVertex, Double> distances = new HashMap<>(); //distance from beginning to this vertex
+        HashMap<MissionVertex, MissionVertex> parents = new HashMap<>();
+
+        distances.put(begin, 0d);
+        parents.put(begin, null);
+
+        //TODO: for better performance, replace the PriorityQueue with a fibonacci heap
+        PriorityQueue<MissionVertex> openList = new PriorityQueue<>(new Comparator<MissionVertex>() {
+            @Override
+            public int compare(MissionVertex o1, MissionVertex o2) {
+                return Double.compare(distances.get(o1), distances.get(o2));
+            }
+        });
+
+        for(MissionVertex vertex : edges.keySet()) {
+            if(vertex.equals(begin)) {
+                openList.add(vertex);
+                continue;
+            }
+
+            distances.put(vertex, Double.MAX_VALUE);
+            openList.add(vertex);
+        }
+
+        while(!openList.isEmpty()) {
+            MissionVertex min = openList.poll();
+
+            for(MissionVertex neighbor : getNeighbors(min)) {
+                if(distances.get(neighbor) > distances.get(min) + edgeWeights.get(min).get(neighbor)) {
+                    distances.put(neighbor, distances.get(min) + edgeWeights.get(min).get(neighbor));
+                    parents.put(neighbor, min);
+
+                    if(openList.contains(neighbor)) {
+                        openList.remove(neighbor);
+                        openList.add(neighbor);
+                    }
+                }
+            }
+        }
+
+        HashMap<MissionVertex, VertexPath> paths = new HashMap<>();
+
+        openList.addAll(edges.keySet());
+
+        //sort approximately via distance to begin to save path calculations if it already exists
+        while(!openList.isEmpty()) {
+            MissionVertex min = openList.poll();
+
+            if(min.equals(begin)) {
+                continue;
+            }
+
+            //get parents
+            LinkedList<MissionVertex> path = new LinkedList<>();
+
+            MissionVertex current = min;
+            while(current != null) {
+                if(paths.containsKey(current)) {
+                    path.addAll(paths.get(current).getPath());
+                    break;
+                }
+
+                path.add(current);
+                current = parents.get(current);
+            }
+
+            paths.put(min, new VertexPath(path, distances.get(min)));
+        }
+
+        //print dijkstra's sizes
+//        openList.addAll(edges.keySet());
+//
+//        while(!openList.isEmpty()) {
+//            MissionVertex vertex = openList.poll();
+//            if(vertex.equals(begin)) {
+//                continue;
+//            }
+//
+//            VertexPath path = getShortestPathUsingEdges(begin, vertex);
+//
+//            Bukkit.broadcastMessage("" + ChatColor.BOLD + begin + " TO " + vertex);
+//            Bukkit.broadcastMessage(ChatColor.YELLOW + "COMPARE " + path.pathLength + " WITH DIJKSTRA'S " + paths.get(vertex).pathLength);
+//            Bukkit.broadcastMessage(ChatColor.BLUE + paths.get(vertex).path.toString());
+//        }
+
+        return paths;
+    }
+
     //this method will use the already defined edges to get a path. it will not traverse A* style to find a path
     public VertexPath getShortestPathUsingEdges(MissionVertexType vertexType1, String name1, MissionVertexType vertexType2, String name2) {
         MissionVertex begin = getVertex(vertexType1, name1);
@@ -356,7 +449,8 @@ public class MissionGraph {
         return getShortestPathUsingEdges(begin, end);
     }
 
-    public VertexPath getShortestPathUsingEdges(MissionVertex begin, MissionVertex end) {
+    //unknown of complexity; ensure it is not worse than dijkstra's before continuing
+    private VertexPath getShortestPathUsingEdges(MissionVertex begin, MissionVertex end) {
         HashMap<MissionVertex, Double> distanceToStart = new HashMap<>();
 
         PriorityQueue<MissionVertex> openList = new PriorityQueue<>(new Comparator<MissionVertex>() {
