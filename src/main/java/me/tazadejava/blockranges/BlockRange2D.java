@@ -99,6 +99,10 @@ public class BlockRange2D {
         }
     }
 
+    public int getArea() {
+        return (endX - startX) * (endZ - startZ);
+    }
+
     public boolean isInRange(Location location) {
         return (location.getBlockX() >= startX && location.getBlockX() <= endX)
                 && (location.getBlockZ() >= startZ && location.getBlockZ() <= endZ);

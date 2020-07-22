@@ -411,11 +411,11 @@ public class MissionGraph {
             MissionVertex current = min;
             while(current != null) {
                 if(paths.containsKey(current)) {
-                    path.addAll(paths.get(current).getPath());
+                    path.addAll(0, paths.get(current).getPath());
                     break;
                 }
 
-                path.add(current);
+                path.addFirst(current);
                 current = parents.get(current);
             }
 

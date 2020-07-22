@@ -20,7 +20,7 @@ public class Mission {
     private int duration;
     private Location playerSpawnLocation;
 
-    private List<MissionRoom> rooms = new ArrayList<>();
+    private HashMap<String, MissionRoom> rooms = new HashMap<>();
     private HashMap<String, Location> decisionPoints = new HashMap<>();
 
     private MissionGraph graph;
@@ -64,7 +64,7 @@ public class Mission {
                 JsonObject object = gson.fromJson(jsonReader, JsonObject.class);
 
                 for (Map.Entry<String, JsonElement> entry : object.entrySet()) {
-                    rooms.add(new MissionRoom(entry.getKey(), playerSpawnLocation.getWorld(), entry.getValue().getAsJsonObject()));
+                    rooms.put(entry.getKey(), new MissionRoom(entry.getKey(), playerSpawnLocation.getWorld(), entry.getValue().getAsJsonObject()));
                 }
 
                 reader.close();
@@ -107,7 +107,7 @@ public class Mission {
 
         JsonObject roomObject = new JsonObject();
 
-        for(MissionRoom room : rooms) {
+        for(MissionRoom room : rooms.values()) {
             room.save(roomObject);
         }
 
@@ -195,7 +195,7 @@ public class Mission {
             return;
         }
 
-        rooms.add(room);
+        rooms.put(room.getRoomName(), room);
     }
 
     public boolean hasDuration() {
@@ -227,13 +227,7 @@ public class Mission {
     }
 
     public boolean hasRoom(String roomName) {
-        for(MissionRoom room : rooms) {
-            if(room.getRoomName().equals(roomName)) {
-                return true;
-            }
-        }
-
-        return false;
+        return rooms.containsKey(roomName);
     }
 
     public boolean hasDecisionPoint(String name) {
@@ -249,17 +243,11 @@ public class Mission {
     }
 
     public MissionRoom getRoom(String name) {
-        for(MissionRoom room : rooms) {
-            if(room.getRoomName().equals(name)) {
-                return room;
-            }
-        }
-
-        return null;
+        return rooms.getOrDefault(name, null);
     }
 
-    public List<MissionRoom> getRooms() {
-        return rooms;
+    public Collection<MissionRoom> getRooms() {
+        return rooms.values();
     }
 
     public MissionGraph getMissionGraph() {

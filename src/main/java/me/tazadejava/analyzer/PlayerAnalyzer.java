@@ -2,6 +2,7 @@ package me.tazadejava.analyzer;
 
 import com.google.gson.JsonObject;
 import com.sun.org.apache.xpath.internal.axes.OneStepIterator;
+import me.tazadejava.blockranges.BlockRange2D;
 import me.tazadejava.mission.MissionGraph;
 import me.tazadejava.mission.MissionRoom;
 import me.tazadejava.statstracker.EnhancedStatsTracker;
@@ -61,11 +62,11 @@ public class PlayerAnalyzer {
     private Set<MissionGraph.MissionVertex> visitedVertices;
     private Set<MissionGraph.MissionVertex> unvisitedRooms;
 
-    //roomSpeed: average MS in each room
+    //roomSpeed: average MS per block in the room
     //decisionSpeed: average blocks per MS
     private double averagePlayerDecisionTraversalSpeed, averagePlayerRoomTriageSpeed;
     private List<DecisionTraversal> playerDecisionSpeeds = new ArrayList<>();
-    private List<Long> playerRoomTriageSpeeds = new ArrayList<>();
+    private HashMap<MissionGraph.MissionVertex, Long> playerRoomTriageSpeeds = new HashMap<>();
     private long lastRoomEnterTime = -1, lastDecisionEnterTime = -1;
 
     public PlayerAnalyzer(Player player, Mission mission) {
@@ -297,9 +298,37 @@ public class PlayerAnalyzer {
             reconstructedPath.add(path.getPath().getLast());
         }
 
+        for(int i = 0; i < 16; i++) {
+            Bukkit.broadcastMessage("");
+        }
+
         Bukkit.broadcastMessage(ChatColor.GREEN + "TOTAL PATH LENGTH: " + totalPathLength + " BLOCKS");
+        double timeToFinish = calculatePlayerTimeToFinish(reconstructedPath, totalPathLength);
+        if(timeToFinish != -1) {
+            Bukkit.broadcastMessage(ChatColor.YELLOW + "EST. TIME TO FINISH: " + (calculatePlayerTimeToFinish(reconstructedPath, totalPathLength) / 1000d) + " seconds");
+        } else {
+            Bukkit.broadcastMessage(ChatColor.YELLOW + "EST. TIME TO FINISH: calulating...");
+        }
+        Bukkit.broadcastMessage("");
 
         return reconstructedPath;
+    }
+
+    //returns in milliseconds
+    private double calculatePlayerTimeToFinish(List<MissionGraph.MissionVertex> bestPath, double totalPathLength) {
+        if(averagePlayerRoomTriageSpeed == 0 || averagePlayerDecisionTraversalSpeed == 0) {
+            return -1;
+        }
+
+        double time = totalPathLength / averagePlayerDecisionTraversalSpeed;
+
+        for(MissionGraph.MissionVertex vertex : bestPath) {
+            if(vertex.type == MissionGraph.MissionVertexType.ROOM && !visitedVertices.contains(vertex)) {
+                time += averagePlayerRoomTriageSpeed * mission.getRoom(vertex.name).getBounds().getArea();
+            }
+        }
+
+        return time;
     }
 
     private void analyzeMissionGraph(EnhancedStatsTracker.LastStatsSnapshot lastStats) {
@@ -409,10 +438,13 @@ public class PlayerAnalyzer {
                 //has not entered room yet
                 lastRoomEnterTime = System.currentTimeMillis();
             } else {
-                //entered a room before, going to another room
-                playerRoomTriageSpeeds.add(System.currentTimeMillis() - lastRoomEnterTime);
+                if(!playerRoomTriageSpeeds.containsKey(lastVertex)) {
+                    //entered a room before, going to another room
+                    playerRoomTriageSpeeds.put(lastVertex, System.currentTimeMillis() - lastRoomEnterTime);
+                    recalculateRoomTriageAverage();
+                }
+
                 lastRoomEnterTime = System.currentTimeMillis();
-                recalculateRoomTriageAverage();
             }
         } else {
             if(lastDecisionEnterTime == -1) {
@@ -425,10 +457,13 @@ public class PlayerAnalyzer {
             }
 
             if(lastVertex != null && lastVertex.type == MissionGraph.MissionVertexType.ROOM) {
-                //just exited a room
-                playerRoomTriageSpeeds.add(System.currentTimeMillis() - lastRoomEnterTime);
+                if(!playerRoomTriageSpeeds.containsKey(lastVertex)) {
+                    //just exited a room
+                    playerRoomTriageSpeeds.put(lastVertex, System.currentTimeMillis() - lastRoomEnterTime);
+                    recalculateRoomTriageAverage();
+                }
+
                 lastRoomEnterTime = -1;
-                recalculateRoomTriageAverage();
             }
         }
     }
@@ -436,11 +471,13 @@ public class PlayerAnalyzer {
     private void recalculateRoomTriageAverage() {
 //        Bukkit.broadcastMessage("ROOM TRIAGE " + playerRoomTriageSpeeds.get(playerRoomTriageSpeeds.size() - 1));
         averagePlayerRoomTriageSpeed = 0;
-        for(long roomTime : playerRoomTriageSpeeds) {
-            averagePlayerRoomTriageSpeed += roomTime;
+        int totalArea = 0;
+        for(MissionGraph.MissionVertex room : playerRoomTriageSpeeds.keySet()) {
+            averagePlayerRoomTriageSpeed += playerRoomTriageSpeeds.get(room);
+            totalArea += mission.getRoom(room.name).getBounds().getArea();
         }
 
-        averagePlayerRoomTriageSpeed /= playerRoomTriageSpeeds.size();
+        averagePlayerRoomTriageSpeed = averagePlayerRoomTriageSpeed / totalArea;
     }
 
     private void recalculateDecisionTraversalAverage() {
