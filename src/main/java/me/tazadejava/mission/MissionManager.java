@@ -48,6 +48,8 @@ public class MissionManager {
 
     private BossBar countdown;
 
+    private BukkitRunnable syncTimer, asyncTimer;
+
     public MissionManager(JavaPlugin plugin, MissionEventListener listener) {
         this.plugin = plugin;
         this.listener = listener;
@@ -134,9 +136,11 @@ public class MissionManager {
         }
 
         this.missionInitiator = missionInitiator;
-        this.currentMission = currentMission;
+        this.currentMission = mission;
         missionInProgress = true;
         jsonLog = new JsonObject();
+
+        mission.startMission();
 
         statsTracker = new EnhancedStatsTracker(plugin, listener, jsonLog);
         statsTracker.startTracking();
@@ -155,7 +159,7 @@ public class MissionManager {
             p.teleport(mission.getPlayerSpawnLocation());
         }
 
-        new BukkitRunnable() {
+        syncTimer = new BukkitRunnable() {
 
             int count = 0;
 
@@ -183,10 +187,16 @@ public class MissionManager {
                     endMission(true);
                     cancel();
                 }
-            }
-        }.runTaskTimer(plugin, 0, 1L);
 
-        new BukkitRunnable() {
+                for(PlayerAnalyzer analyzer : playerAnalyzers) {
+                    analyzer.updateSync();
+                }
+            }
+        };
+
+        syncTimer.runTaskTimer(plugin, 0, 1L);
+
+        asyncTimer = new BukkitRunnable() {
             @Override
             public void run() {
                 if(!missionInProgress) {
@@ -198,7 +208,9 @@ public class MissionManager {
                     analyzer.update(((EnhancedStatsTracker) statsTracker).getLastStatsSnapshot(analyzer.getPlayer()));
                 }
             }
-        }.runTaskTimerAsynchronously(plugin, 0L, 1L);
+        };
+
+        asyncTimer.runTaskTimerAsynchronously(plugin, 0L, 1L);
 
         return true;
     }
@@ -232,6 +244,14 @@ public class MissionManager {
         missionInProgress = false;
         jsonLog = null;
         countdown.removeAll();
+
+        if(syncTimer != null && !syncTimer.isCancelled()) {
+            syncTimer.cancel();
+        }
+
+        if(asyncTimer != null && !asyncTimer.isCancelled()) {
+            asyncTimer.cancel();
+        }
 
         missionInitiator.sendMessage("The mission has ended!");
     }

@@ -64,13 +64,19 @@ public class BlockRange2D {
         return startBlock != null && endBlock != null;
     }
 
-    //expands in all four directions by amount
-    public void expand(int amount) {
+    /**
+     * Expands in all four directions by amount
+     * @param amount The number of blocks to expand the range in all directions
+     * @return The same block range, with the expansion completed
+     */
+    public BlockRange2D expand(int amount) {
         startX -= amount;
         startZ -= amount;
 
         endX += amount;
         endZ += amount;
+
+        return this;
     }
 
     public int[] getRangeX() {

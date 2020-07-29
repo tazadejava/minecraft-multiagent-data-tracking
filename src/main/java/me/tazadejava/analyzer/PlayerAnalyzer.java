@@ -1,21 +1,22 @@
 package me.tazadejava.analyzer;
 
 import com.google.gson.JsonObject;
-import com.sun.org.apache.xpath.internal.axes.OneStepIterator;
+import me.tazadejava.actiontracker.Utils;
 import me.tazadejava.blockranges.BlockRange2D;
+import me.tazadejava.mission.Mission;
 import me.tazadejava.mission.MissionGraph;
 import me.tazadejava.mission.MissionRoom;
 import me.tazadejava.statstracker.EnhancedStatsTracker;
-import me.tazadejava.mission.Mission;
+import me.tazadejava.statstracker.PreciseVisibleBlocksRaycaster;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
+import org.bukkit.block.data.BlockData;
 import org.bukkit.entity.Player;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 //for the most part, this class does not have to exist within the plugin:
 //to export to a separate process:
@@ -35,6 +36,10 @@ public class PlayerAnalyzer {
 
             pathLength = graph.getShortestPathUsingEdges(beginVertex.type, beginVertex.name, endVertex.type, endVertex.name).getPathLength();
         }
+    }
+
+    public enum Direction {
+        NORTH, EAST, SOUTH, WEST
     }
 
     public static final Set<Material> VICTIM_BLOCKS = new HashSet<>(Arrays.asList(Material.PRISMARINE, Material.GOLD_BLOCK));
@@ -69,6 +74,12 @@ public class PlayerAnalyzer {
     private HashMap<MissionGraph.MissionVertex, Long> playerRoomTriageSpeeds = new HashMap<>();
     private long lastRoomEnterTime = -1, lastDecisionEnterTime = -1;
 
+    private HashMap<Direction, HashMap<Direction, String>> relativeHumanDirections = new HashMap<>();
+
+    //TODO: THIS ONLY WORKS FOR THE SPARKY MAP; IN THE FUTURE, MAKE IT CONFIGURABLE BY THE MISSION
+    private PreciseVisibleBlocksRaycaster visibleBlocksRaycaster = new PreciseVisibleBlocksRaycaster(true, true, false, 52, 53);
+    private long lastRaycastTime;
+
     public PlayerAnalyzer(Player player, Mission mission) {
         this.player = player;
         this.mission = mission;
@@ -82,6 +93,40 @@ public class PlayerAnalyzer {
         unvisitedRooms.addAll(mission.getMissionGraph().getRoomVertices());
 
         currentRoom = null;
+
+        calculateRelativeHumanDirections();
+    }
+
+    private void calculateRelativeHumanDirections() {
+        relativeHumanDirections.put(Direction.NORTH, new HashMap<>());
+        relativeHumanDirections.put(Direction.EAST, new HashMap<>());
+        relativeHumanDirections.put(Direction.WEST, new HashMap<>());
+        relativeHumanDirections.put(Direction.SOUTH, new HashMap<>());
+
+        String front = "in front of you";
+        String left = "on your left";
+        String right = "on your right";
+        String behind = "behind you";
+
+        relativeHumanDirections.get(Direction.NORTH).put(Direction.NORTH, front);
+        relativeHumanDirections.get(Direction.NORTH).put(Direction.EAST, right);
+        relativeHumanDirections.get(Direction.NORTH).put(Direction.WEST, left);
+        relativeHumanDirections.get(Direction.NORTH).put(Direction.SOUTH, behind);
+
+        relativeHumanDirections.get(Direction.SOUTH).put(Direction.NORTH, behind);
+        relativeHumanDirections.get(Direction.SOUTH).put(Direction.EAST, left);
+        relativeHumanDirections.get(Direction.SOUTH).put(Direction.WEST, right);
+        relativeHumanDirections.get(Direction.SOUTH).put(Direction.SOUTH, front);
+
+        relativeHumanDirections.get(Direction.EAST).put(Direction.NORTH, left);
+        relativeHumanDirections.get(Direction.EAST).put(Direction.EAST, front);
+        relativeHumanDirections.get(Direction.EAST).put(Direction.WEST, behind);
+        relativeHumanDirections.get(Direction.EAST).put(Direction.SOUTH, right);
+
+        relativeHumanDirections.get(Direction.WEST).put(Direction.NORTH, right);
+        relativeHumanDirections.get(Direction.WEST).put(Direction.EAST, behind);
+        relativeHumanDirections.get(Direction.WEST).put(Direction.WEST, front);
+        relativeHumanDirections.get(Direction.WEST).put(Direction.SOUTH, left);
     }
 
     private void log(String action) {
@@ -96,6 +141,13 @@ public class PlayerAnalyzer {
         //TODO: pass data into genesis, so that genesis can understand data
     }
 
+    //sync update
+    public void updateSync() {
+        //possibly recalculate edges
+        analyzeMissionGraphEdges();
+    }
+
+    //async update
     public void update(EnhancedStatsTracker.LastStatsSnapshot lastStats) {
         if(lastLastStats == null || lastLastStats.lastPlayerValues == null) {
             lastLastStats = lastStats;
@@ -104,14 +156,60 @@ public class PlayerAnalyzer {
 
         EnhancedStatsTracker.LastStatsSnapshot deltaStats = lastStats.calculateDeltaSnapshot(lastLastStats);
 
-        analyzeMissionGraph(lastStats);
-
-        analyzeVictimTarget(lastStats);
-        analyzeBrokenBlocks(lastStats, deltaStats);
-        analyzeRoom(lastStats);
-        analyzeClickedBlocks(deltaStats);
+//        analyzeMissionGraph(lastStats);
+//
+//        analyzeVictimTarget(lastStats);
+//        analyzeBrokenBlocks(lastStats, deltaStats);
+//        analyzeRoom(lastStats);
+//        analyzeClickedBlocks(deltaStats);
 
         lastLastStats = lastStats;
+    }
+
+    //goal: use visibility algorithm to determine whether or not edges should be changed
+    private void analyzeMissionGraphEdges() {
+        if(System.currentTimeMillis() - lastRaycastTime < 200) {
+            return;
+        }
+        lastRaycastTime = System.currentTimeMillis();
+
+        Block[] visibleBlocks = visibleBlocksRaycaster.getVisibleBlocks(player);
+
+        Material[] mats = new Material[] {Material.BLACK_STAINED_GLASS, Material.BLUE_STAINED_GLASS, Material.BROWN_STAINED_GLASS, Material.CYAN_STAINED_GLASS, Material.WHITE_STAINED_GLASS, Material.YELLOW_STAINED_GLASS, Material.RED_STAINED_GLASS, Material.GREEN_STAINED_GLASS};
+
+        BlockData defaultMaterial = Bukkit.getServer().createBlockData(mats[(int) (Math.random() * mats.length)]);
+        BlockData specialMaterial = Bukkit.getServer().createBlockData(Material.MAGMA_BLOCK);
+        for (Block block : visibleBlocks) {
+            player.sendBlockChange(block.getLocation(), defaultMaterial);
+        }
+
+        HashMap<MissionRoom, Set<Block>> visibleBlocksByRoom = new HashMap<>();
+
+        HashMap<BlockRange2D, MissionRoom> adjustedRoomBounds = new HashMap<>();
+
+        for(MissionRoom room : mission.getRooms()) {
+            adjustedRoomBounds.put(room.getBounds().clone().expand(-1), room);
+        }
+
+        for(Block visibleBlock : visibleBlocks) {
+            for(BlockRange2D bounds : adjustedRoomBounds.keySet()) {
+                if(bounds.isInRange(visibleBlock.getLocation())) {
+                    MissionRoom room = adjustedRoomBounds.get(bounds);
+                    visibleBlocksByRoom.putIfAbsent(room, new HashSet<>());
+                    visibleBlocksByRoom.get(room).add(visibleBlock);
+                }
+            }
+        }
+
+        if(!visibleBlocksByRoom.isEmpty()) {
+            Bukkit.broadcastMessage(ChatColor.LIGHT_PURPLE + "ALL VISIBLE:");
+            for (MissionRoom room : visibleBlocksByRoom.keySet()) {
+                Location loc = visibleBlocksByRoom.get(room).iterator().next().getLocation();
+                player.sendBlockChange(loc, specialMaterial);
+                String example = Utils.getFormattedLocation(loc);
+                Bukkit.broadcastMessage(ChatColor.GREEN + "ROOM " + room.getRoomName() + " VISIBLE " + "(" + visibleBlocksByRoom.get(room).size() + ") " + example);
+            }
+        }
     }
 
     private HashMap<MissionGraph.MissionVertex, Double> calculateRoomPotentials(MissionGraph.MissionVertex playerVertex) {
@@ -234,16 +332,23 @@ public class PlayerAnalyzer {
             roomPaths.put(beginNode, graph.getShortestPathToAllVertices(beginNode.type, beginNode.name));
         }
 
-        //now, recursively find the next best room from any current room (starting at player's node)
+        //to account for LONG-TERM SUCCESS, we will "leaf" out the top x shortest paths, and analyze all the paths y times to look at the shortest long-term paths
+        //then, we will iteratively find the next best room starting at the node that ends this path
 
         Set<MissionGraph.MissionVertex> visitedVertices = new HashSet<>();
         List<MissionGraph.MissionVertex> roomPath = new ArrayList<>();
 
-        visitedVertices.add(playerVertex);
-        roomPath.add(playerVertex);
+        List<MissionGraph.MissionVertex> recursivePath = calculateBestLongTermPath(nodeCandidates, roomPaths, playerVertex);
+        visitedVertices.addAll(recursivePath);
+        roomPath.addAll(recursivePath);
 
-        MissionGraph.MissionVertex currentVertex = playerVertex;
-        //reconstruct the best path for next x rooms via room to decision node mapping
+        //disable lines above and enable lines below to compare long term and short term paths
+//        visitedVertices.add(playerVertex);
+//        roomPath.add(playerVertex);
+
+        //now, iteratively find the next best room from any current room (starting at player's node)
+        MissionGraph.MissionVertex currentVertex = roomPath.get(roomPath.size() - 1); //TODO; change to the ending node from above
+
         for(int i = 0; i < 30; i++) {
             MissionGraph.MissionVertex minVertexExplored = null;
             MissionGraph.MissionVertex minVertexUnexplored = null;
@@ -284,6 +389,7 @@ public class PlayerAnalyzer {
             currentVertex = chosenVertex;
         }
 
+        //reconstruct the best path for next x rooms via room to decision node mapping
         List<MissionGraph.MissionVertex> reconstructedPath = new ArrayList<>();
         double totalPathLength = 0;
 
@@ -312,6 +418,109 @@ public class PlayerAnalyzer {
         Bukkit.broadcastMessage("");
 
         return reconstructedPath;
+    }
+
+    //consider leaf branching situation, multiple shortest paths
+    private List<MissionGraph.MissionVertex> calculateBestLongTermPath(List<MissionGraph.MissionVertex> nodeCandidates, HashMap<MissionGraph.MissionVertex, HashMap<MissionGraph.MissionVertex, MissionGraph.VertexPath>> roomPaths, MissionGraph.MissionVertex firstVertex) {
+        HashMap<List<MissionGraph.MissionVertex>, Double> currentPaths = new HashMap<>();
+        HashMap<List<MissionGraph.MissionVertex>, Set<MissionGraph.MissionVertex>> visitedVertices = new HashMap<>();
+
+        List<MissionGraph.MissionVertex> firstPath = new ArrayList<>(Collections.singletonList(firstVertex));
+        currentPaths.put(firstPath, 0d);
+        visitedVertices.put(firstPath, new HashSet<>(firstPath));
+
+        List<MissionGraph.MissionVertex>[] currentPath = new List[] {firstPath};
+
+        PriorityQueue<MissionGraph.MissionVertex> minVertices = new PriorityQueue<>(new Comparator<MissionGraph.MissionVertex>() {
+            @Override
+            public int compare(MissionGraph.MissionVertex o1, MissionGraph.MissionVertex o2) {
+                if(visitedVertices.get(currentPath[0]).contains(o1)) {
+                    return 1;
+                } else {
+                    if(visitedVertices.get(currentPath[0]).contains(o2)) {
+                        return -1;
+                    } else {
+                        MissionGraph.MissionVertex currentVertex = currentPath[0].get(currentPath[0].size() - 1);
+
+                        if(currentVertex == o1) {
+                            return 1;
+                        } else if(currentVertex == o2) {
+                            return -1;
+                        }
+
+                        return Double.compare(roomPaths.get(currentVertex).get(o1).getPathLength(), roomPaths.get(currentVertex).get(o2).getPathLength());
+                    }
+                }
+            }
+        });
+
+        //traverse through 5 layers of multiple decisions
+        for(int i = 0; i < 5; i++) {
+            Set<List<MissionGraph.MissionVertex>> clonedKeySet = new HashSet<>(currentPaths.keySet());
+            for(List<MissionGraph.MissionVertex> path : clonedKeySet) {
+                minVertices.clear();
+                currentPath[0] = path;
+                minVertices.addAll(nodeCandidates);
+
+                //no more path remaining
+                if(visitedVertices.get(path).contains(minVertices.peek())) {
+                    continue;
+                }
+
+                //create branch for top 2 shortest paths
+                for(int j = 0; j < 2; j++) {
+                    List<MissionGraph.MissionVertex> newPath = new ArrayList<>(path);
+                    Set<MissionGraph.MissionVertex> newVisited = new HashSet<>(visitedVertices.get(path));
+                    newPath.add(minVertices.poll());
+                    double pathLength = currentPaths.get(path) + roomPaths.get(newPath.get(newPath.size() - 2)).get(newPath.get(newPath.size() - 1)).getPathLength();
+
+                    newVisited.add(newPath.get(newPath.size() - 1));
+
+                    currentPaths.put(newPath, pathLength);
+                    visitedVertices.put(newPath, newVisited);
+
+                    //no more path remaining
+                    if(minVertices.isEmpty() || visitedVertices.get(path).contains(minVertices.peek())) {
+                        break;
+                    }
+                }
+
+                //don't reuse this path
+                currentPaths.remove(path);
+            }
+
+            //print out possible paths
+
+//            Bukkit.broadcastMessage(ChatColor.BOLD + "END OF ITERATION " + i);
+//            Bukkit.broadcastMessage(ChatColor.LIGHT_PURPLE + "PATHS: " + currentPaths.size());
+//
+//            List<List<MissionGraph.MissionVertex>> pathsSorted = new ArrayList<>(currentPaths.keySet());
+//
+//            pathsSorted.sort(new Comparator<List<MissionGraph.MissionVertex>>() {
+//                @Override
+//                public int compare(List<MissionGraph.MissionVertex> o1, List<MissionGraph.MissionVertex> o2) {
+//                    return Double.compare(currentPaths.get(o1), currentPaths.get(o2));
+//                }
+//            });
+//
+//            for(List<MissionGraph.MissionVertex> pathLoop : pathsSorted) {
+//                Bukkit.broadcastMessage(pathLoop.toString() + " " + ChatColor.YELLOW + currentPaths.get(pathLoop));
+//            }
+        }
+
+        //get the shortest path out of all traversed
+        List<MissionGraph.MissionVertex> shortestPath = null;
+        double pathLength = Double.MAX_VALUE;
+        for(List<MissionGraph.MissionVertex> path : currentPaths.keySet()) {
+            if(currentPaths.get(path) < pathLength) {
+                pathLength = currentPaths.get(path);
+                shortestPath = path;
+            }
+        }
+
+//        Bukkit.broadcastMessage(ChatColor.GOLD + "SHORTEST PATH: " + currentPaths.get(shortestPath) + " " + shortestPath);
+
+        return shortestPath;
     }
 
     //returns in milliseconds
@@ -391,6 +600,8 @@ public class PlayerAnalyzer {
 
                 Bukkit.broadcastMessage("BEST PATH: " + bestPathFormat.toString());
 
+                analyzeNextBestMove(bestPath, lastStats);
+
                 //analyze player speed
 //                Bukkit.broadcastMessage("CURRENT NODE: " + playerVertex);
                 calculatePlayerSpeed(mission.getMissionGraph(), lastVertex, playerVertex);
@@ -429,6 +640,73 @@ public class PlayerAnalyzer {
                 }
             }
         }
+    }
+
+    //goal: using the best path and player location, determine in EASILY HUMAN READABLE FORMAT the next best move
+    private void analyzeNextBestMove(List<MissionGraph.MissionVertex> bestPath, EnhancedStatsTracker.LastStatsSnapshot lastStats) {
+        //simplified first-time analysis: at decision nodes, output if the player should enter a room connected, and if so, output where it is relative to the player
+        Direction playerDir = getDirection(player.getLocation());
+
+        if(bestPath.size() > 1) {
+            if(bestPath.get(1).type == MissionGraph.MissionVertexType.ROOM) {
+                Location playerToRoomLoc = player.getLocation().clone();
+                playerToRoomLoc.setDirection(bestPath.get(1).location.toVector().subtract(player.getLocation().toVector()));
+                Direction roomDir = getDirection(playerToRoomLoc);
+
+                if(bestPath.get(0).type == MissionGraph.MissionVertexType.DECISION) {
+                    Bukkit.broadcastMessage(ChatColor.LIGHT_PURPLE + "You should enter the room " + relativeHumanDirections.get(playerDir).get(roomDir) + ".");
+                } else {
+                    if(visitedVertices.contains(bestPath.get(0))) {
+                        Bukkit.broadcastMessage(ChatColor.LIGHT_PURPLE + "You should enter the room " + relativeHumanDirections.get(playerDir).get(roomDir) + ".");
+                    } else {
+                        Bukkit.broadcastMessage(ChatColor.LIGHT_PURPLE + "After you explore this room, you should enter the room " + relativeHumanDirections.get(playerDir).get(roomDir) + ".");
+                    }
+                }
+            } else {
+                Location playerToRoomLoc = player.getLocation().clone();
+                playerToRoomLoc.setDirection(bestPath.get(1).location.toVector().subtract(player.getLocation().toVector()));
+                Direction roomDir = getDirection(playerToRoomLoc);
+
+                if(bestPath.get(0).type == MissionGraph.MissionVertexType.DECISION) {
+                    Bukkit.broadcastMessage(ChatColor.LIGHT_PURPLE + "Continue the hallway " + relativeHumanDirections.get(playerDir).get(roomDir) + ".");
+                } else {
+                    if(visitedVertices.contains(bestPath.get(0))) {
+                        if(lastVertex.equals(bestPath.get(1))) {
+                            Bukkit.broadcastMessage(ChatColor.LIGHT_PURPLE + "You should exit the same way you came in.");
+                        } else {
+                            Bukkit.broadcastMessage(ChatColor.LIGHT_PURPLE + "You should exit the room via the opening " + relativeHumanDirections.get(playerDir).get(roomDir) + ".");
+                        }
+                    } else {
+                        if(lastVertex.equals(bestPath.get(1))) {
+                            Bukkit.broadcastMessage(ChatColor.LIGHT_PURPLE + "After you explore this room, you should exit the same way you came in.");
+                        } else {
+                            Bukkit.broadcastMessage(ChatColor.LIGHT_PURPLE + "After you explore this room, you should exit the room via the opening " + relativeHumanDirections.get(playerDir).get(roomDir) + ".");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private Direction getDirection(Location loc) {
+        Direction dir;
+        double yaw = loc.getYaw();
+
+        if(yaw < 0) {
+            yaw += 360;
+        }
+
+        if(yaw >= 45 && yaw < 135) {
+            dir = Direction.WEST;
+        } else if(yaw >= 135 && yaw < 225) {
+            dir = Direction.NORTH;
+        } else if(yaw >= 225 && yaw < 315) {
+            dir = Direction.EAST;
+        } else {
+            dir = Direction.SOUTH;
+        }
+
+        return dir;
     }
 
     private void calculatePlayerSpeed(MissionGraph graph, MissionGraph.MissionVertex lastVertex, MissionGraph.MissionVertex currentVertex) {

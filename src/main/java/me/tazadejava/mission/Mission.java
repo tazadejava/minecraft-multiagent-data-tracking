@@ -23,7 +23,7 @@ public class Mission {
     private HashMap<String, MissionRoom> rooms = new HashMap<>();
     private HashMap<String, Location> decisionPoints = new HashMap<>();
 
-    private MissionGraph graph;
+    private MissionGraph originalGraph, currentMissionGraph;
 
     public Mission(String missionName) {
         this.missionName = missionName;
@@ -31,7 +31,7 @@ public class Mission {
         missionID = UUID.randomUUID().toString() + "-" + LocalDateTime.now().toString();
         missionID = missionID.replaceAll("[^a-zA-Z0-9]", "");
 
-        graph = new MissionGraph(this);
+        originalGraph = new MissionGraph(this);
     }
 
     public Mission(String id, File dataFolder, Gson gson, JsonObject details) {
@@ -47,6 +47,10 @@ public class Mission {
         }
 
         loadMissionFolderData(dataFolder, gson);
+    }
+
+    public void startMission() {
+        currentMissionGraph = originalGraph.clone();
     }
 
     private void loadMissionFolderData(File dataFolder, Gson gson) {
@@ -84,7 +88,7 @@ public class Mission {
                     decisionPoints.put(entry.getKey(), new Location(playerSpawnLocation.getWorld(), Double.parseDouble(split[0]), Double.parseDouble(split[1]), Double.parseDouble(split[2])));
                 }
 
-                graph = new MissionGraph(this, main.getAsJsonObject("graphData"));
+                originalGraph = new MissionGraph(this, main.getAsJsonObject("graphData"));
 
                 reader.close();
             }
@@ -137,7 +141,7 @@ public class Mission {
 
             main.add("decisionPoints", decisionPointsObj);
 
-            main.add("graphData", graph.save());
+            main.add("graphData", originalGraph.save());
 
             try {
                 File decisionPointsFile = new File(missionFolder.getAbsolutePath() + "/decisionGraph.json");
@@ -251,6 +255,10 @@ public class Mission {
     }
 
     public MissionGraph getMissionGraph() {
-        return graph;
+        return currentMissionGraph;
+    }
+
+    public MissionGraph getOriginalMissionGraph() {
+        return originalGraph;
     }
 }

@@ -99,7 +99,8 @@ public class EnhancedStatsTracker implements StatsTracker {
             }
 
             deltaStats.lastPlayerBlocksBrokenLocations = new ArrayList<>();
-            if(lastPlayerBlocksBrokenLocations.size() > lastStats.lastPlayerBlocksBrokenLocations.size()) {
+            //TODO: this part crashes nullexception sometimes, idk why but check in more depth later when revising the statstracker
+            if(lastPlayerBlocksBrokenLocations != null && lastStats.lastPlayerBlocksBrokenLocations != null && lastPlayerBlocksBrokenLocations.size() > lastStats.lastPlayerBlocksBrokenLocations.size()) {
                 for(int i = lastStats.lastPlayerBlocksBrokenLocations.size(); i < lastPlayerBlocksBrokenLocations.size(); i++) {
                     deltaStats.lastPlayerBlocksBrokenLocations.add(lastPlayerBlocksBrokenLocations.get(i));
                 }

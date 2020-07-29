@@ -6,10 +6,11 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import me.tazadejava.actiontracker.ActionTrackerPlugin;
 import me.tazadejava.actiontracker.Utils;
-import me.tazadejava.analyzer.PlayerAnalyzer;
 import me.tazadejava.blockranges.BlockRange2D;
 import me.tazadejava.blockranges.SelectionWand;
 import me.tazadejava.blockranges.SpecialItem;
+import me.tazadejava.map.DynamicMapRenderer;
+import me.tazadejava.map.MapOverlayRenderer;
 import me.tazadejava.statstracker.PreciseVisibleBlocksRaycaster;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
@@ -27,18 +28,11 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.meta.MapMeta;
-import org.bukkit.inventory.meta.SkullMeta;
-import org.bukkit.map.MapCanvas;
-import org.bukkit.map.MapRenderer;
-import org.bukkit.map.MapView;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.EulerAngle;
 import org.bukkit.util.StringUtil;
 import org.bukkit.util.Vector;
 
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
 import java.io.*;
 import java.util.*;
 
@@ -181,6 +175,10 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
     }
 
     private void raycastTest(CommandSender commandSender, boolean restoreAfterEach, boolean loopRaycast) {
+        raycastTest(commandSender, restoreAfterEach, loopRaycast, 0, 255);
+    }
+
+    private void raycastTest(CommandSender commandSender, boolean restoreAfterEach, boolean loopRaycast, int lowYBound, int upperYBound) {
         Player player = (Player) commandSender;
 
         restoreBlocks(player);
@@ -188,7 +186,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
         lastBlockState.clear();
         blockPlayer.clear();
 
-        PreciseVisibleBlocksRaycaster raycaster = new PreciseVisibleBlocksRaycaster(true, true, true, 0, 255);
+        PreciseVisibleBlocksRaycaster raycaster = new PreciseVisibleBlocksRaycaster(true, true, true, lowYBound, upperYBound);
 
         BlockData defaultMaterial = Bukkit.getServer().createBlockData(Material.GLASS);
 
@@ -270,6 +268,9 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                 case "raycast": //this will draw a continuous raycast to all visible blocks.
                     raycastTest(commandSender, false, true);
                     break;
+                case "raycastybounds": //this will draw a continuous raycast to all visible blocks.
+                    raycastTest(commandSender, false, true, 52, 53);
+                    break;
                 case "raycastdiscrete": //this will raycast, but will reset the raycasted before raycasting again. may flicker, watch out.
                     raycastTest(commandSender, true, true);
                     break;
@@ -284,7 +285,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                     break;
 
                 case "test":
-                    missionManager.getMission(args[1]).getMissionGraph().getShortestPathToAllVertices(MissionGraph.MissionVertexType.ROOM, "0");
+                    missionManager.getMission(args[1]).getOriginalMissionGraph().getShortestPathToAllVertices(MissionGraph.MissionVertexType.ROOM, "0");
                     break;
 
                 case "graphtest": //testing command to find distances between any two nodes; unsafe to crashing if supplied incorrect arguments
@@ -302,7 +303,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
 
                         commandSender.sendMessage("Path between " + type1 + " " + name1 + " and " + type2 + " " + name2 + ":");
 
-                        MissionGraph.VertexPath path = mission.getMissionGraph().getShortestPathUsingEdges(type1, name1, type2, name2);
+                        MissionGraph.VertexPath path = mission.getOriginalMissionGraph().getShortestPathUsingEdges(type1, name1, type2, name2);
 
                         if(path == null) {
                             commandSender.sendMessage("No path found.");
@@ -455,7 +456,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                                 break;
                             }
 
-                            mission.getMissionGraph().clearAllEdges();
+                            mission.getOriginalMissionGraph().clearAllEdges();
 
                             int lines = 0;
                             try {
@@ -464,6 +465,9 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                                 String read;
                                 while((read = reader.readLine()) != null) {
                                     if(read.isEmpty()) {
+                                        continue;
+                                    }
+                                    if(read.startsWith("#")) {
                                         continue;
                                     }
 
@@ -476,19 +480,20 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                                     String name1 = split[0].substring(1);
                                     String name2 = split[1].substring(1);
 
-                                    mission.getMissionGraph().defineEdge(type1, name1, type2, name2);
+                                    mission.getOriginalMissionGraph().defineEdge(type1, name1, type2, name2);
 
-                                    commandSender.sendMessage("Defined edge between " + type1 + ": " + name1 + " and " + type2 + ": " + name2 + ".");
+                                    commandSender.sendMessage(ChatColor.GRAY + "Defined edge - " + type1 + ": " + name1 + " and " + type2 + ": " + name2 + ". " + ChatColor.DARK_GRAY + "Length: " + mission.getOriginalMissionGraph().getShortestPathUsingEdges(type1, name1, type2, name2).getPathLength());
                                 }
 
                                 reader.close();
-                            } catch (FileNotFoundException e) {
-                                e.printStackTrace();
-                            } catch (IOException e) {
-                                e.printStackTrace();
-                            }
 
-                            commandSender.sendMessage("Done! Defined " + lines + " edges.");
+                                missionManager.saveData();
+
+                                commandSender.sendMessage(ChatColor.GREEN + "Done! Defined " + lines + " edges under the file: " + file.getName() + ".");
+                            } catch(Exception e) {
+                                commandSender.sendMessage(ChatColor.RED + "Something went wrong. The edges were not created.");
+                                commandSender.sendMessage(ChatColor.RED + "ERROR: " + e.getMessage());
+                            }
 
                             break;
                         default:
@@ -618,12 +623,12 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                                 break;
                             }
 
-                            if(mission.getMissionGraph().doesEdgeExist(type1, name1, type2, name2)) {
+                            if(mission.getOriginalMissionGraph().doesEdgeExist(type1, name1, type2, name2)) {
                                 commandSender.sendMessage(ChatColor.RED + "An edge between " + name1 + " and " + name2 + " already exists!");
                                 break;
                             }
 
-                            MissionGraph.LocationPath path = mission.getMissionGraph().defineEdge(type1, name1, type2, name2);
+                            MissionGraph.LocationPath path = mission.getOriginalMissionGraph().defineEdge(type1, name1, type2, name2);
 
                             if(path == null) {
                                 commandSender.sendMessage(ChatColor.RED + "ERROR: A path could not be found!");
@@ -840,32 +845,13 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                 case "map":
                     if(commandSender instanceof Player) {
                         p = (Player) commandSender;
-
-                        MapView map = Bukkit.createMap(p.getWorld());
-                        map.getRenderers().clear();
-                        map.setLocked(true);
-                        map.setUnlimitedTracking(false);
-                        map.setScale(MapView.Scale.NORMAL);
-                        map.addRenderer(new MapRenderer() {
-                            @Override
-                            public void render(MapView map, MapCanvas canvas, Player player) {
-                                try {
-                                    InputStream stream = getClass().getClassLoader().getResourceAsStream("sparky_map.png");
-                                    BufferedImage image = ImageIO.read(stream);
-                                    canvas.drawImage(0, 0, image);
-                                    stream.close();
-                                } catch (IOException e) {
-                                    e.printStackTrace();
-                                } catch(IllegalArgumentException ex) {}
-                            }
-                        });
-
-                        ItemStack mapItem = new ItemStack(Material.FILLED_MAP);
-                        MapMeta meta = (MapMeta) mapItem.getItemMeta();
-                        meta.setMapView(map);
-                        mapItem.setItemMeta(meta);
-
-                        p.getInventory().addItem(mapItem);
+                        p.getInventory().setItemInMainHand(MapOverlayRenderer.getMap());
+                    }
+                    break;
+                case "gps":
+                    if(commandSender instanceof Player) {
+                        p = (Player) commandSender;
+                        p.getInventory().setItemInMainHand(DynamicMapRenderer.getMap());
                     }
                     break;
                 default:

@@ -1,5 +1,6 @@
 package me.tazadejava.statstracker;
 
+import me.tazadejava.actiontracker.Utils;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -66,7 +67,7 @@ public class PreciseVisibleBlocksRaycaster {
     //note: for lower and upper bounds, the algorithm will still calculate target block regardless of bound and perform A* air travel outside of these boundaries to maximize accuracy; however, it will only raycast solid blocks if on the bounds
     private int yLowerBound, yUpperBound;
 
-    private Set<Material> transparentMaterials = new HashSet<>(Arrays.asList(Material.AIR, Material.OAK_DOOR));
+    private Set<Material> transparentMaterials = new HashSet<>(Arrays.asList(Material.AIR, Material.OAK_DOOR, Material.OAK_SIGN, Material.OAK_WALL_SIGN));
 
     //if hyperPrecision is enabled, up to 5 raycasts will be sent out instead of one to determine if a block is visible to the player; may be more computationally heavy, but will improve accuracy
     public PreciseVisibleBlocksRaycaster(boolean doHyperPrecision) {
@@ -92,6 +93,11 @@ public class PreciseVisibleBlocksRaycaster {
 
     public Block[] getVisibleBlocks(Player p, Set<Location> ignoredBlocks) {
         Set<Block> visibleBlocks = new HashSet<>();
+
+        Set<Block> visibleBlocksBounded = null;
+        if(yLowerBound != 0 || yUpperBound != 255) {
+            visibleBlocksBounded = new HashSet<>();
+        }
 
         FOVBounds bounds = new FOVBounds(p);
 
@@ -122,7 +128,14 @@ public class PreciseVisibleBlocksRaycaster {
             }
 
             if(alwaysAddTargetBlock) {
-                visibleBlocks.add(lineOfSight.get(lineOfSight.size() - 1));
+                Block targetBlock = lineOfSight.get(lineOfSight.size() - 1);
+                visibleBlocks.add(targetBlock);
+
+                if(visibleBlocksBounded != null) {
+                    if(targetBlock.getY() >= yLowerBound && targetBlock.getY() <= yUpperBound) {
+                        visibleBlocksBounded.add(targetBlock);
+                    }
+                }
             }
 
             int timeout = MAX_TIMEOUT;
@@ -158,13 +171,19 @@ public class PreciseVisibleBlocksRaycaster {
                                 visitedSolidBlocks.put(adjacentAdjacentBlock, adjacentBlock);
 
                                 //check Y constraints, if they exist; do only for solid blocks so that air can still travel
-                                if(adjacentAdjacentBlock.getLocation().getBlockY() < yLowerBound || adjacentAdjacentBlock.getLocation().getBlockY() > yUpperBound) {
-                                    continue;
-                                }
+//                                if(adjacentAdjacentBlock.getLocation().getBlockY() < yLowerBound || adjacentAdjacentBlock.getLocation().getBlockY() > yUpperBound) {
+//                                    continue;
+//                                }
 
                                 boolean raycast = doHyperPrecision ? raycastHitsBlockFuzzyHyperPrecise(p, adjacentFace, adjacentAdjacentBlock) : raycastHitsBlockFuzzy(p, adjacentFace, adjacentAdjacentBlock);
                                 if (raycast) {
                                     visibleBlocks.add(adjacentAdjacentBlock);
+
+                                    if(visibleBlocksBounded != null) {
+                                        if(adjacentAdjacentBlock.getY() >= yLowerBound && adjacentAdjacentBlock.getY() <= yUpperBound) {
+                                            visibleBlocksBounded.add(adjacentAdjacentBlock);
+                                        }
+                                    }
                                 }
 
                                 unvisitedAirBlocks.add(adjacentBlock);
@@ -186,14 +205,16 @@ public class PreciseVisibleBlocksRaycaster {
 
                         visitedSolidBlocks.put(adjacentBlock, airBlock);
 
-                        //check Y constraints, if they exist; do only for solid blocks so that air can still travel
-                        if(adjacentBlock.getLocation().getBlockY() < yLowerBound || adjacentBlock.getLocation().getBlockY() > yUpperBound) {
-                            continue;
-                        }
-
                         boolean raycast = doHyperPrecision ? raycastHitsBlockFuzzyHyperPrecise(p, face, adjacentBlock) : raycastHitsBlockFuzzy(p, face, adjacentBlock);
                         if (raycast) {
+                            if(adjacentBlock.getType() == Material.CAULDRON) Bukkit.broadcastMessage("ADD HERE in else");
                             visibleBlocks.add(adjacentBlock);
+
+                            if(visibleBlocksBounded != null) {
+                                if(adjacentBlock.getY() >= yLowerBound && adjacentBlock.getY() <= yUpperBound) {
+                                    visibleBlocksBounded.add(adjacentBlock);
+                                }
+                            }
                         }
                     }
                 }
@@ -202,12 +223,17 @@ public class PreciseVisibleBlocksRaycaster {
 //            Bukkit.broadcastMessage("Timeout: " + timeout + "/" + MAX_TIMEOUT);
         }
 
-        return visibleBlocks.toArray(new Block[0]);
+        if(visibleBlocksBounded != null) {
+            return visibleBlocksBounded.toArray(new Block[0]);
+        } else {
+            return visibleBlocks.toArray(new Block[0]);
+        }
     }
 
     private boolean raycastHitsBlockFuzzyHyperPrecise(Player p, BlockFace direction, Block targetBlock) {
         boolean raycastResult = raycastHitsBlockFuzzy(p, direction, targetBlock);
         if(raycastResult) {
+            if(targetBlock.getType() == Material.CAULDRON) Bukkit.broadcastMessage("PASSED ORIGINAL RAYCAST");
             return true;
         }
 
@@ -275,12 +301,16 @@ public class PreciseVisibleBlocksRaycaster {
             }
 
             if(rayTrace.getHitBlock().equals(targetBlock)) {
+                if(targetBlock.getType() == Material.CAULDRON) Bukkit.broadcastMessage("PASSED RAYCAST FACE " + Utils.getFormattedLocation(targetBlockFace));
                 return true;
             }
 
-            if(checkFuzzyForTargetBlock(rayTrace.getHitBlock(), targetBlock, direction)) {
-                return true;
-            }
+            //found a bug: fuzzy detection for hyper precise blocks will sometimes report a visible block that isn't actually visible.
+            //tests have shown that disabling this check does not negatively affect accuracy
+//            if(checkFuzzyForTargetBlock(rayTrace.getHitBlock(), targetBlock, direction)) {
+//                if(targetBlock.getType() == Material.CAULDRON) Bukkit.broadcastMessage("PASSED FUZZY DETECTIOn");
+//                return true;
+//            }
         }
 
         return false;

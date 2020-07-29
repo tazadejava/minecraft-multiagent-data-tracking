@@ -3,13 +3,16 @@
 /home/yoshi/Documents/GenesisUROP/ActionTrackerPlugin/src/main/java/me/tazadejava/statstracker/StreamlinedStatsTracker.java
 /home/yoshi/Documents/GenesisUROP/ActionTrackerPlugin/src/main/java/me/tazadejava/blockranges/SelectionWand.java
 /home/yoshi/Documents/GenesisUROP/ActionTrackerPlugin/src/main/java/me/tazadejava/mission/MissionEventListener.java
+/home/yoshi/Documents/GenesisUROP/ActionTrackerPlugin/src/main/java/me/tazadejava/map/GraphGenerator.java
 /home/yoshi/Documents/GenesisUROP/ActionTrackerPlugin/src/main/java/me/tazadejava/blockranges/SpecialItem.java
 /home/yoshi/Documents/GenesisUROP/ActionTrackerPlugin/src/main/java/me/tazadejava/mission/Mission.java
 /home/yoshi/Documents/GenesisUROP/ActionTrackerPlugin/src/main/java/me/tazadejava/blockranges/SpecialItemEventListener.java
 /home/yoshi/Documents/GenesisUROP/ActionTrackerPlugin/src/main/java/me/tazadejava/mission/MissionGraph.java
+/home/yoshi/Documents/GenesisUROP/ActionTrackerPlugin/src/main/java/me/tazadejava/map/DynamicMapRenderer.java
 /home/yoshi/Documents/GenesisUROP/ActionTrackerPlugin/src/main/java/me/tazadejava/blockranges/BlockRange2D.java
 /home/yoshi/Documents/GenesisUROP/ActionTrackerPlugin/src/main/java/me/tazadejava/mission/MissionRoom.java
 /home/yoshi/Documents/GenesisUROP/ActionTrackerPlugin/src/main/java/me/tazadejava/analyzer/PlayerAnalyzer.java
+/home/yoshi/Documents/GenesisUROP/ActionTrackerPlugin/src/main/java/me/tazadejava/map/MapOverlayRenderer.java
 /home/yoshi/Documents/GenesisUROP/ActionTrackerPlugin/src/main/java/me/tazadejava/statstracker/PreciseVisibleBlocksRaycaster.java
 /home/yoshi/Documents/GenesisUROP/ActionTrackerPlugin/src/main/java/me/tazadejava/actiontracker/ActionTrackerPlugin.java
 /home/yoshi/Documents/GenesisUROP/ActionTrackerPlugin/src/main/java/me/tazadejava/mission/MissionManager.java

@@ -1,11 +1,8 @@
 package me.tazadejava.mission;
 
-import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import me.tazadejava.blockranges.BlockRange2D;
-import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
 
@@ -132,6 +129,22 @@ public class MissionGraph {
 
     private MissionGraph() {
 
+    }
+
+    public MissionGraph clone() {
+        MissionGraph graph = new MissionGraph();
+
+        graph.mission = mission;
+
+        graph.roomVertices = roomVertices;
+        graph.decisionVertices = decisionVertices;
+
+        for(MissionVertex vertex : edges.keySet()) {
+            graph.edges.put(vertex, new HashSet<>(edges.get(vertex)));
+            graph.edgeWeights.put(vertex, new HashMap<>(edgeWeights.get(vertex)));
+        }
+
+        return graph;
     }
 
     public MissionGraph cloneGraphOnly() {
