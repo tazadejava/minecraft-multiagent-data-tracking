@@ -210,7 +210,7 @@ public class MissionManager {
             }
         };
 
-        asyncTimer.runTaskTimerAsynchronously(plugin, 0L, 1L);
+        asyncTimer.runTaskTimerAsynchronously(plugin, 0L, 2L);
 
         return true;
     }

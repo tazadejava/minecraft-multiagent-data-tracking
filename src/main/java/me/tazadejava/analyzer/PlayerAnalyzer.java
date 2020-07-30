@@ -1,20 +1,26 @@
 package me.tazadejava.analyzer;
 
 import com.google.gson.JsonObject;
-import me.tazadejava.actiontracker.Utils;
 import me.tazadejava.blockranges.BlockRange2D;
 import me.tazadejava.mission.Mission;
 import me.tazadejava.mission.MissionGraph;
 import me.tazadejava.mission.MissionRoom;
 import me.tazadejava.statstracker.EnhancedStatsTracker;
 import me.tazadejava.statstracker.PreciseVisibleBlocksRaycaster;
+import net.md_5.bungee.api.ChatMessageType;
+import net.md_5.bungee.api.chat.TextComponent;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.entity.Player;
+import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.scoreboard.DisplaySlot;
+import org.bukkit.scoreboard.Objective;
+import org.bukkit.scoreboard.Scoreboard;
 
 import java.util.*;
 
@@ -43,6 +49,8 @@ public class PlayerAnalyzer {
     }
 
     public static final Set<Material> VICTIM_BLOCKS = new HashSet<>(Arrays.asList(Material.PRISMARINE, Material.GOLD_BLOCK));
+    private static final BlockFace[] ADJACENT_FACES = new BlockFace[] {BlockFace.NORTH, BlockFace.EAST, BlockFace.WEST, BlockFace.SOUTH, BlockFace.UP, BlockFace.DOWN};
+
 
     private Player player;
     private Mission mission;
@@ -77,8 +85,12 @@ public class PlayerAnalyzer {
     private HashMap<Direction, HashMap<Direction, String>> relativeHumanDirections = new HashMap<>();
 
     //TODO: THIS ONLY WORKS FOR THE SPARKY MAP; IN THE FUTURE, MAKE IT CONFIGURABLE BY THE MISSION
-    private PreciseVisibleBlocksRaycaster visibleBlocksRaycaster = new PreciseVisibleBlocksRaycaster(true, true, false, 52, 53);
+    private PreciseVisibleBlocksRaycaster visibleBlocksRaycaster = new PreciseVisibleBlocksRaycaster(true, true, false, 52, 54);
     private long lastRaycastTime;
+
+    private static final boolean PRINT = true;
+    private TextComponent actionBarMessage = null;
+    private List<String> bestPathFormat;
 
     public PlayerAnalyzer(Player player, Mission mission) {
         this.player = player;
@@ -145,6 +157,23 @@ public class PlayerAnalyzer {
     public void updateSync() {
         //possibly recalculate edges
         analyzeMissionGraphEdges();
+
+        if(actionBarMessage != null) {
+            player.spigot().sendMessage(ChatMessageType.ACTION_BAR, actionBarMessage);
+        }
+        if(bestPathFormat != null) {
+            Scoreboard scoreboard = Bukkit.getScoreboardManager().getNewScoreboard();
+
+            Objective objective = scoreboard.registerNewObjective("path", "dummy", "" + ChatColor.GREEN + ChatColor.BOLD + "Best Path:");
+
+            objective.setDisplaySlot(DisplaySlot.SIDEBAR);
+
+            for(int i = 0; i < (bestPathFormat.size() < 16 ? bestPathFormat.size() : 16); i++) {
+                objective.getScore(bestPathFormat.get(i)).setScore(-(i + 1));
+            }
+
+            player.setScoreboard(scoreboard);
+        }
     }
 
     //async update
@@ -156,12 +185,12 @@ public class PlayerAnalyzer {
 
         EnhancedStatsTracker.LastStatsSnapshot deltaStats = lastStats.calculateDeltaSnapshot(lastLastStats);
 
-//        analyzeMissionGraph(lastStats);
-//
-//        analyzeVictimTarget(lastStats);
-//        analyzeBrokenBlocks(lastStats, deltaStats);
-//        analyzeRoom(lastStats);
-//        analyzeClickedBlocks(deltaStats);
+        analyzeMissionGraph(lastStats);
+
+        analyzeVictimTarget(lastStats);
+        analyzeBrokenBlocks(lastStats, deltaStats);
+        analyzeRoom(lastStats);
+        analyzeClickedBlocks(deltaStats);
 
         lastLastStats = lastStats;
     }
@@ -173,15 +202,14 @@ public class PlayerAnalyzer {
         }
         lastRaycastTime = System.currentTimeMillis();
 
-        Block[] visibleBlocks = visibleBlocksRaycaster.getVisibleBlocks(player);
+        Set<Block> visibleBlocks = visibleBlocksRaycaster.getVisibleBlocks(player);
 
         Material[] mats = new Material[] {Material.BLACK_STAINED_GLASS, Material.BLUE_STAINED_GLASS, Material.BROWN_STAINED_GLASS, Material.CYAN_STAINED_GLASS, Material.WHITE_STAINED_GLASS, Material.YELLOW_STAINED_GLASS, Material.RED_STAINED_GLASS, Material.GREEN_STAINED_GLASS};
-
         BlockData defaultMaterial = Bukkit.getServer().createBlockData(mats[(int) (Math.random() * mats.length)]);
         BlockData specialMaterial = Bukkit.getServer().createBlockData(Material.MAGMA_BLOCK);
-        for (Block block : visibleBlocks) {
-            player.sendBlockChange(block.getLocation(), defaultMaterial);
-        }
+//        for (Block block : visibleBlocks) {
+//            player.sendBlockChange(block.getLocation(), defaultMaterial);
+//        }
 
         HashMap<MissionRoom, Set<Block>> visibleBlocksByRoom = new HashMap<>();
 
@@ -201,13 +229,114 @@ public class PlayerAnalyzer {
             }
         }
 
-        if(!visibleBlocksByRoom.isEmpty()) {
-            Bukkit.broadcastMessage(ChatColor.LIGHT_PURPLE + "ALL VISIBLE:");
-            for (MissionRoom room : visibleBlocksByRoom.keySet()) {
-                Location loc = visibleBlocksByRoom.get(room).iterator().next().getLocation();
-                player.sendBlockChange(loc, specialMaterial);
-                String example = Utils.getFormattedLocation(loc);
-                Bukkit.broadcastMessage(ChatColor.GREEN + "ROOM " + room.getRoomName() + " VISIBLE " + "(" + visibleBlocksByRoom.get(room).size() + ") " + example);
+        //check for new edges between rooms
+        if(visibleBlocksByRoom.size() > 1) {
+            HashMap<MissionRoom, Set<MissionRoom>> checkedRooms = new HashMap<>();
+
+            for(MissionRoom originalRoom : visibleBlocksByRoom.keySet()) {
+                checkedRooms.put(originalRoom, new HashSet<>());
+
+                for(MissionRoom compareRoom : visibleBlocksByRoom.keySet()) {
+                    //avoid checking edges both ways
+                    if(checkedRooms.containsKey(compareRoom) && checkedRooms.get(compareRoom).contains(originalRoom)) {
+                        continue;
+                    }
+
+                    checkedRooms.get(originalRoom).add(compareRoom);
+
+                    if(originalRoom != compareRoom) {
+                        if(mission.getMissionGraph().doesEdgeExist(MissionGraph.MissionVertexType.ROOM, originalRoom.getRoomName(), MissionGraph.MissionVertexType.ROOM, compareRoom.getRoomName())) {
+                            continue;
+                        }
+
+                        if(originalRoom.getBounds().collidesWith(compareRoom.getBounds())) {
+                            //then they possibly may have an edge
+//                            Bukkit.broadcastMessage("POSSIBLE EDGE BETWEEN ROOMS " + originalRoom.getRoomName() + " AND " + compareRoom.getRoomName());
+
+                            int minX = Integer.MAX_VALUE;
+                            int minZ = Integer.MAX_VALUE;
+                            int minY = Integer.MAX_VALUE;
+                            int maxY = Integer.MIN_VALUE;
+                            int maxX = Integer.MIN_VALUE;
+                            int maxZ = Integer.MIN_VALUE;
+
+                            Set<Block> boundaryBlock = new HashSet<>();
+                            for(Block visibleBlock : visibleBlocks) {
+                                if(originalRoom.getBounds().isInRange(visibleBlock.getLocation())) {
+                                    if (compareRoom.getBounds().isInRange(visibleBlock.getLocation())) {
+                                        player.sendBlockChange(visibleBlock.getLocation(), specialMaterial);
+
+                                        boundaryBlock.add(visibleBlock);
+
+                                        minX = Math.min(minX, visibleBlock.getX());
+                                        maxX = Math.max(maxX, visibleBlock.getX());
+                                        minY = Math.min(minY, visibleBlock.getY());
+                                        maxY = Math.max(maxY, visibleBlock.getY());
+                                        minZ = Math.min(minZ, visibleBlock.getZ());
+                                        maxZ = Math.max(maxZ, visibleBlock.getZ());
+                                    }
+                                }
+                            }
+
+                            //todo: this algorithm works well within plugins itself, but outside of a plugin format it may not know blocks that have not been raytraced. possibly revise and include those blocks i.e. check if it is not in the raycasted and confirm that way instead?
+                            boolean doesEdgeExist = false;
+
+                            Set<Block> airBlocks = new HashSet<>();
+
+                            main:
+                            for(int x = minX; x <= maxX; x++) {
+                                for(int y = minY; y <= maxY; y++) {
+                                    for (int z = minZ; z <= maxZ; z++) {
+                                        Block block = new Location(player.getWorld(), x, y, z).getBlock();
+
+                                        boolean hasAdjacentVisibleBlock = false;
+
+                                        for(BlockFace dir : ADJACENT_FACES) {
+                                            if(boundaryBlock.contains(block.getRelative(dir))) {
+                                                hasAdjacentVisibleBlock = true;
+                                                break;
+                                            }
+                                        }
+
+                                        if(block.getType() == Material.AIR && hasAdjacentVisibleBlock) {
+                                            airBlocks.add(block);
+
+                                            //check if exists air blocks at least 2 high
+
+                                            if(airBlocks.contains(block.getRelative(0, 1, 0)) || airBlocks.contains(block.getRelative(0, -1, 0))) {
+                                                doesEdgeExist = true;
+                                                break main;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if(doesEdgeExist) {
+                                mission.getMissionGraph().defineEdge(MissionGraph.MissionVertexType.ROOM, originalRoom.getRoomName(), MissionGraph.MissionVertexType.ROOM, compareRoom.getRoomName());
+                                mission.getMissionGraph().protectEdge(MissionGraph.MissionVertexType.ROOM, originalRoom.getRoomName(), MissionGraph.MissionVertexType.ROOM, compareRoom.getRoomName());
+
+                                Bukkit.broadcastMessage("" + ChatColor.GOLD + ChatColor.BOLD + "FOUND EDGE BETWEEN ROOMS " + originalRoom.getRoomName() + " AND " + compareRoom.getRoomName()+ " WITH LENGTH " + mission.getMissionGraph().getShortestPathUsingEdges(MissionGraph.MissionVertexType.ROOM, originalRoom.getRoomName(), MissionGraph.MissionVertexType.ROOM, compareRoom.getRoomName()).getPathLength());
+
+                                //recalculate best path
+                                lastVertex = null;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        //check for disrupted edges due to blockages
+        if(lastVertex != null) {
+            for(MissionGraph.MissionVertex neighbor : mission.getMissionGraph().getNeighbors(lastVertex)) {
+                if(!mission.getMissionGraph().verifyEdgeTraversable(lastVertex.type, lastVertex.name, neighbor.type, neighbor.name, visibleBlocks)) {
+                    Bukkit.broadcastMessage("" + ChatColor.RED + ChatColor.BOLD + "THE EDGE BETWEEN " + lastVertex + " AND " + neighbor + " IS NOT TRAVERSABLE!");
+                    mission.getMissionGraph().deleteEdge(lastVertex.type, lastVertex.name, neighbor.type, neighbor.name);
+
+                    lastVertex = null;
+                    break;
+                }
             }
         }
     }
@@ -220,6 +349,12 @@ public class PlayerAnalyzer {
         double maxDistanceToPlayer = 0;
         for(MissionGraph.MissionVertex room : mission.getMissionGraph().getRoomVertices()) {
             MissionGraph.VertexPath path = mission.getMissionGraph().getShortestPathUsingEdges(room.type, room.name, playerVertex.type, playerVertex.name);
+
+            //there is no currently known path to get to this room
+            if(path == null) {
+                continue;
+            }
+
             maxDistanceToPlayer = Math.max(maxDistanceToPlayer, path.getPathLength());
         }
 
@@ -293,15 +428,9 @@ public class PlayerAnalyzer {
         return roomPotentials;
     }
 
-    private List<MissionGraph.MissionVertex> calculateBestPath(MissionGraph.MissionVertex playerVertex, HashMap<MissionGraph.MissionVertex, Double> roomPotentials) {
+//    private List<MissionGraph.MissionVertex> calculateBestPath(MissionGraph.MissionVertex playerVertex, HashMap<MissionGraph.MissionVertex, Double> roomPotentials) {
+    private List<MissionGraph.MissionVertex> calculateBestPath(MissionGraph.MissionVertex playerVertex) {
         MissionGraph graph = mission.getMissionGraph().cloneGraphOnly();
-
-        double maxDistanceToPlayer = 0;
-        for(MissionGraph.MissionVertex room : mission.getMissionGraph().getRoomVertices()) {
-            MissionGraph.VertexPath path = mission.getMissionGraph().getShortestPathUsingEdges(room.type, room.name, playerVertex.type, playerVertex.name);
-            maxDistanceToPlayer = Math.max(maxDistanceToPlayer, path.getPathLength());
-        }
-        double roomPotentialWeight = Math.sqrt(maxDistanceToPlayer);
 
         //modify weights to accomodate for potential; this will allow for graph path to be weighted based on specific factors
 //        for(MissionGraph.MissionVertex roomPotential : roomPotentials.keySet()) {
@@ -404,18 +533,17 @@ public class PlayerAnalyzer {
             reconstructedPath.add(path.getPath().getLast());
         }
 
-        for(int i = 0; i < 16; i++) {
-            Bukkit.broadcastMessage("");
-        }
+        if(PRINT) {
+            double timeToFinish = calculatePlayerTimeToFinish(reconstructedPath, totalPathLength);
+            String timeToFinishMsg;
+            if (timeToFinish != -1) {
+                timeToFinishMsg = ChatColor.YELLOW + "EST. TIME LEFT: " + ((Math.round((calculatePlayerTimeToFinish(reconstructedPath, totalPathLength) / 1000d) * 100d) / 100d)) + " seconds";
+            } else {
+                timeToFinishMsg = ChatColor.YELLOW + "EST. TIME LEFT: ...";
+            }
 
-        Bukkit.broadcastMessage(ChatColor.GREEN + "TOTAL PATH LENGTH: " + totalPathLength + " BLOCKS");
-        double timeToFinish = calculatePlayerTimeToFinish(reconstructedPath, totalPathLength);
-        if(timeToFinish != -1) {
-            Bukkit.broadcastMessage(ChatColor.YELLOW + "EST. TIME TO FINISH: " + (calculatePlayerTimeToFinish(reconstructedPath, totalPathLength) / 1000d) + " seconds");
-        } else {
-            Bukkit.broadcastMessage(ChatColor.YELLOW + "EST. TIME TO FINISH: calulating...");
+            actionBarMessage = new TextComponent(ChatColor.GREEN + "PATH LENGTH: " + ((Math.round(totalPathLength * 100d) / 100d)) + " BLOCKS" + ChatColor.WHITE + ChatColor.BOLD + " | " + timeToFinishMsg);
         }
-        Bukkit.broadcastMessage("");
 
         return reconstructedPath;
     }
@@ -566,41 +694,42 @@ public class PlayerAnalyzer {
             if(!playerVertex.equals(lastVertex)) {
                 //best path
 
-                HashMap<MissionGraph.MissionVertex, Double> roomPotentials = calculateRoomPotentials(playerVertex);
-                List<MissionGraph.MissionVertex> bestPath = calculateBestPath(playerVertex, roomPotentials);
+//                HashMap<MissionGraph.MissionVertex, Double> roomPotentials = calculateRoomPotentials(playerVertex);
+                List<MissionGraph.MissionVertex> bestPath = calculateBestPath(playerVertex);
 
-                List<String> bestPathFormat = new ArrayList<>();
+                bestPathFormat = new ArrayList<>();
+                HashMap<String, Integer> visitedVerticesCount = new HashMap<>();
 
                 int decisionShow = 5;
-                boolean first = true;
                 for(MissionGraph.MissionVertex vertex : bestPath) {
-                    if(first) {
-                        first = false;
-                        bestPathFormat.add(ChatColor.DARK_GRAY + vertex.toString());
-                        continue;
-                    }
-
-                    ChatColor color = null;
+                    String color;
                     if(vertex.type == MissionGraph.MissionVertexType.ROOM) {
                         if(visitedVertices.contains(vertex)) {
-                            color = ChatColor.AQUA;
+                            color = "" + ChatColor.AQUA;
                         } else {
-                            color = ChatColor.GOLD;
+                            color = "" + ChatColor.GOLD;
                         }
                         decisionShow--;
                     } else {
                         if(decisionShow <= 0) {
                             continue;
                         }
-                        color = ChatColor.GRAY;
+                        color = "" + ChatColor.YELLOW;
                     }
 
-                    bestPathFormat.add(color + vertex.toString());
+                    if(!visitedVerticesCount.containsKey(vertex.toString())) {
+                        visitedVerticesCount.put(vertex.toString(), 1);
+                        bestPathFormat.add(color + vertex.toString());
+                    } else {
+                        visitedVerticesCount.put(vertex.toString(), visitedVerticesCount.get(vertex.toString()) + 1);
+                        bestPathFormat.add(color + vertex.toString() + " (" + visitedVerticesCount.get(vertex.toString()) + ")");
+                    }
+
                 }
 
-                Bukkit.broadcastMessage("BEST PATH: " + bestPathFormat.toString());
-
-                analyzeNextBestMove(bestPath, lastStats);
+                if(PRINT) {
+                    analyzeNextBestMove(bestPath, lastStats);
+                }
 
                 //analyze player speed
 //                Bukkit.broadcastMessage("CURRENT NODE: " + playerVertex);
@@ -671,13 +800,13 @@ public class PlayerAnalyzer {
                     Bukkit.broadcastMessage(ChatColor.LIGHT_PURPLE + "Continue the hallway " + relativeHumanDirections.get(playerDir).get(roomDir) + ".");
                 } else {
                     if(visitedVertices.contains(bestPath.get(0))) {
-                        if(lastVertex.equals(bestPath.get(1))) {
+                        if(lastVertex != null && lastVertex.equals(bestPath.get(1))) {
                             Bukkit.broadcastMessage(ChatColor.LIGHT_PURPLE + "You should exit the same way you came in.");
                         } else {
                             Bukkit.broadcastMessage(ChatColor.LIGHT_PURPLE + "You should exit the room via the opening " + relativeHumanDirections.get(playerDir).get(roomDir) + ".");
                         }
                     } else {
-                        if(lastVertex.equals(bestPath.get(1))) {
+                        if(lastVertex != null && lastVertex.equals(bestPath.get(1))) {
                             Bukkit.broadcastMessage(ChatColor.LIGHT_PURPLE + "After you explore this room, you should exit the same way you came in.");
                         } else {
                             Bukkit.broadcastMessage(ChatColor.LIGHT_PURPLE + "After you explore this room, you should exit the room via the opening " + relativeHumanDirections.get(playerDir).get(roomDir) + ".");
@@ -710,6 +839,10 @@ public class PlayerAnalyzer {
     }
 
     private void calculatePlayerSpeed(MissionGraph graph, MissionGraph.MissionVertex lastVertex, MissionGraph.MissionVertex currentVertex) {
+        if(lastVertex == null) {
+            return;
+        }
+
         if(currentVertex.type == MissionGraph.MissionVertexType.ROOM) {
             lastDecisionEnterTime = -1;
             if(lastRoomEnterTime == -1) {

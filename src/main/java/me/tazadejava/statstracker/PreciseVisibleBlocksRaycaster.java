@@ -87,11 +87,11 @@ public class PreciseVisibleBlocksRaycaster {
         }
     }
 
-    public Block[] getVisibleBlocks(Player p) {
+    public Set<Block> getVisibleBlocks(Player p) {
         return getVisibleBlocks(p, null);
     }
 
-    public Block[] getVisibleBlocks(Player p, Set<Location> ignoredBlocks) {
+    public Set<Block> getVisibleBlocks(Player p, Set<Location> ignoredBlocks) {
         Set<Block> visibleBlocks = new HashSet<>();
 
         Set<Block> visibleBlocksBounded = null;
@@ -107,7 +107,7 @@ public class PreciseVisibleBlocksRaycaster {
             Block lastLineOfSight = lineOfSight.get(lineOfSight.size() - 1);
 
             if(transparentMaterials.contains(lastLineOfSight.getType())) {
-                return visibleBlocks.toArray(new Block[0]);
+                return visibleBlocks;
             }
 
             HashMap<Block, Block> visitedSolidBlocks = new HashMap<>(); //format: solid block, air block that defines it
@@ -207,7 +207,6 @@ public class PreciseVisibleBlocksRaycaster {
 
                         boolean raycast = doHyperPrecision ? raycastHitsBlockFuzzyHyperPrecise(p, face, adjacentBlock) : raycastHitsBlockFuzzy(p, face, adjacentBlock);
                         if (raycast) {
-                            if(adjacentBlock.getType() == Material.CAULDRON) Bukkit.broadcastMessage("ADD HERE in else");
                             visibleBlocks.add(adjacentBlock);
 
                             if(visibleBlocksBounded != null) {
@@ -224,16 +223,15 @@ public class PreciseVisibleBlocksRaycaster {
         }
 
         if(visibleBlocksBounded != null) {
-            return visibleBlocksBounded.toArray(new Block[0]);
+            return visibleBlocksBounded;
         } else {
-            return visibleBlocks.toArray(new Block[0]);
+            return visibleBlocks;
         }
     }
 
     private boolean raycastHitsBlockFuzzyHyperPrecise(Player p, BlockFace direction, Block targetBlock) {
         boolean raycastResult = raycastHitsBlockFuzzy(p, direction, targetBlock);
         if(raycastResult) {
-            if(targetBlock.getType() == Material.CAULDRON) Bukkit.broadcastMessage("PASSED ORIGINAL RAYCAST");
             return true;
         }
 
@@ -301,7 +299,6 @@ public class PreciseVisibleBlocksRaycaster {
             }
 
             if(rayTrace.getHitBlock().equals(targetBlock)) {
-                if(targetBlock.getType() == Material.CAULDRON) Bukkit.broadcastMessage("PASSED RAYCAST FACE " + Utils.getFormattedLocation(targetBlockFace));
                 return true;
             }
 

@@ -8,6 +8,7 @@ import org.bukkit.inventory.meta.MapMeta;
 import org.bukkit.map.*;
 
 import javax.imageio.ImageIO;
+import javax.swing.*;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
@@ -46,28 +47,8 @@ public class DynamicMapRenderer extends MapRenderer {
         int playerX = player.getLocation().getBlockX();
         int playerZ = player.getLocation().getBlockZ();
 
-        //convert to -128 to 127
-
-        byte pointerX, pointerZ;
-
         double playerScaleX = (double) (playerX - xRange[0]) / xLength;
         double playerScaleZ = (double) (playerZ - zRange[0]) / zLength;
-
-        if(playerX < xRange[0]) {
-            pointerX = -128;
-        } else if(playerX > xRange[1]) {
-            pointerX = 127;
-        } else {
-            pointerX = (byte) Math.floor((playerScaleX * 256) - 128);
-        }
-
-        if(playerZ < zRange[0]) {
-            pointerZ = -128;
-        } else if(playerZ > zRange[1]) {
-            pointerZ = 127;
-        } else {
-            pointerZ = (byte) Math.floor((playerScaleZ * 256) - 128);
-        }
 
         try {
             InputStream stream = getClass().getClassLoader().getResourceAsStream("sparky_map.png");
@@ -80,12 +61,12 @@ public class DynamicMapRenderer extends MapRenderer {
                 angle += 360;
             }
 
-            //round to nearest 15
-//            angle = (int) (Math.round(angle / 15.0) * 15.0);
+            //round angle to nearest 15
+            angle = (int) (Math.round(angle / 15.0) * 15.0);
 
             int pointerZTranslation = 64;
             MapCursorCollection cursors = new MapCursorCollection();
-            canvas.drawImage(0, 0, rotateImage(image, angle, playerScaleX, playerScaleZ, pointerZTranslation, cursors));
+            canvas.drawImage(0, 0, rotateImage(image, angle, playerScaleX, playerScaleZ, pointerZTranslation));
 
             cursors.addCursor(new MapCursor((byte) 0, (byte) pointerZTranslation, (byte) 8, MapCursor.Type.RED_POINTER, true));
 
@@ -95,60 +76,35 @@ public class DynamicMapRenderer extends MapRenderer {
         } catch(IllegalArgumentException ex) {}
     }
 
-    private byte scaleToMapCoordinates(double scale) {
-        int result = (int) ((scale * 255d) - 128);
-
-        if(result < -128) {
-            return (byte) -128;
-        } else if(result > 127) {
-            return (byte) 127;
-        } else {
-            return (byte) result;
-        }
-    }
-
-    private BufferedImage rotateImage(BufferedImage image, int angle, double xScale, double zScale, int pointerZTranslation, MapCursorCollection cursors) {
+    private BufferedImage rotateImage(BufferedImage image, int angle, double xScale, double zScale, int pointerZTranslation) {
         int width = image.getWidth();
         int height = image.getHeight();
 
-        BufferedImage rotated = new BufferedImage(width, height, image.getType());
+        //translate, then rotate
 
-        Graphics2D graphics = rotated.createGraphics();
+        BufferedImage translated = new BufferedImage(width * 3, height * 3, image.getType());
 
-//        graphics.rotate(Math.toRadians(angle), width / 2d, height / 2d);
-//        graphics.drawImage(image, null, (int) (width * (1 - xScale)) - (width / 2), (int) (height * (1 - zScale)) - (height / 2));
+        Graphics2D graphics = translated.createGraphics();
 
-        Bukkit.broadcastMessage("ANGLE " + angle);
+        graphics.translate(width, height);
 
-        double xRotate = width * xScale;
-//        double zRotate = (zScale * height) + ((pointerZTranslation / 255d) * height);
-        double zRotate = zScale * height;
-
-        graphics.translate(xRotate, zRotate);
-        graphics.rotate(Math.toRadians(angle));
-        cursors.addCursor(new MapCursor(scaleToMapCoordinates(xRotate / width), scaleToMapCoordinates(zRotate / height), (byte) 0, MapCursor.Type.RED_X, true));
-
-        graphics.translate(-xRotate, -zRotate);
-        graphics.drawImage(image, null, 0, 0);
-
-//        graphics.drawImage(image, null, -width / 2, -height / 2);
-
-//        graphics.drawImage(image, null, (int) (-xScale * width), (int) (-zScale * height));
-//        graphics.drawImage(image, null, (int) (-xScale * width) +  (width / 2), (int) (-zScale * height) + (height / 2) + (int) (((pointerZTranslation) / 255d) * height));
+        int xDelta = (int) (-xScale * width) +  (width / 2);
+        int zDelta = (int) (-zScale * height) + (height / 2) + (int) (((pointerZTranslation) / 255d) * height);
+        graphics.drawImage(image, null, xDelta, zDelta);
 
         graphics.dispose();
 
-//        BufferedImage translated = new BufferedImage(width, height, image.getType());
-//
-//        graphics = translated.createGraphics();
-//
-////        graphics.drawImage(rotated, null, width / 2, height / 2);
-////        graphics.translate(-xRotate, -zRotate);
-//        graphics.drawImage(rotated, null, 0, 0);
-//
-//        graphics.dispose();
+        //next, rotate
+
+        BufferedImage rotated = new BufferedImage(width, height, image.getType());
+
+        graphics = rotated.createGraphics();
+
+        graphics.rotate(Math.toRadians(angle), rotated.getWidth() / 2, rotated.getHeight() / 2 + ((int) (((pointerZTranslation) / 255d) * rotated.getHeight())));
+        graphics.drawImage(translated, null, -width, -height);
+
+        graphics.dispose();
 
         return rotated;
-//        return translated;
     }
 }

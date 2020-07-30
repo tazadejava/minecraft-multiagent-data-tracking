@@ -207,7 +207,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                 }
 
                 long begin = System.currentTimeMillis();
-                Block[] blocks = raycaster.getVisibleBlocks((Player) commandSender, lastBlockState.keySet());
+                Set<Block> blocks = raycaster.getVisibleBlocks((Player) commandSender, lastBlockState.keySet());
                 Bukkit.broadcastMessage((System.currentTimeMillis() - begin) + " MS to raycast");
 
                 for (Block block : blocks) {
@@ -493,6 +493,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                             } catch(Exception e) {
                                 commandSender.sendMessage(ChatColor.RED + "Something went wrong. The edges were not created.");
                                 commandSender.sendMessage(ChatColor.RED + "ERROR: " + e.getMessage());
+                                e.printStackTrace();
                             }
 
                             break;

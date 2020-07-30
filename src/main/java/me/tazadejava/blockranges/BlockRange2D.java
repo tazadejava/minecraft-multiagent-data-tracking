@@ -79,6 +79,10 @@ public class BlockRange2D {
         return this;
     }
 
+    public boolean collidesWith(BlockRange2D otherBounds) {
+        return (startX <= otherBounds.endX) && (otherBounds.startX <= endX) && (startZ <= otherBounds.endZ) && (otherBounds.startZ <= endZ);
+    }
+
     public int[] getRangeX() {
         return new int[] {startX, endX};
     }

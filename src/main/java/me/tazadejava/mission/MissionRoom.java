@@ -19,6 +19,7 @@ import org.bukkit.scheduler.BukkitRunnable;
 
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.Set;
 
 public class MissionRoom {
@@ -97,7 +98,7 @@ public class MissionRoom {
                     return;
                 }
 
-                Block[] blocks = raycaster.getVisibleBlocks(player, lastBlockState.keySet());
+                Set<Block> blocks = raycaster.getVisibleBlocks(player, lastBlockState.keySet());
                 for (Block block : blocks) {
                     if(!bounds.isInRange(block.getLocation())) {
                         continue;
@@ -121,5 +122,18 @@ public class MissionRoom {
 
     public String getRoomName() {
         return roomName;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        MissionRoom that = (MissionRoom) o;
+        return Objects.equals(roomName, that.roomName);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(roomName);
     }
 }

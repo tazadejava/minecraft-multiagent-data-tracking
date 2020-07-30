@@ -1,10 +1,14 @@
 package me.tazadejava.mission;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import me.tazadejava.blockranges.BlockRange2D;
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.World;
+import org.bukkit.block.Block;
 
 import java.util.*;
 
@@ -102,13 +106,21 @@ public class MissionGraph {
 
     private HashMap<MissionVertex, Set<MissionVertex>> edges = new HashMap<>();
     private HashMap<MissionVertex, HashMap<MissionVertex, Double>> edgeWeights = new HashMap<>();
+    private HashMap<MissionVertex, HashMap<MissionVertex, LinkedList<Location>>> edgePaths = new HashMap<>();
+
+    //represents edges that have been verified to be traversable
+    private HashMap<MissionVertex, Set<MissionVertex>> verifiedEdges = new HashMap<>();
 
     public MissionGraph(Mission mission) {
         this.mission = mission;
     }
 
-    public MissionGraph(Mission mission, JsonObject data) {
+    public MissionGraph(Mission mission, JsonObject data, World world) {
         this.mission = mission;
+
+        if(data == null) {
+            return;
+        }
 
         for(Map.Entry<String, JsonElement> entry : data.entrySet()) {
             String[] keySplit = entry.getKey().split(" ");
@@ -116,13 +128,26 @@ public class MissionGraph {
 
             edges.put(vertex, new HashSet<>());
             edgeWeights.put(vertex, new HashMap<>());
+            edgePaths.put(vertex, new HashMap<>());
 
             for(Map.Entry<String, JsonElement> neighborEntry : entry.getValue().getAsJsonObject().entrySet()) {
                 String[] neighborKeySplit = neighborEntry.getKey().split(" ");
                 MissionVertex neighborVertex = getVertex(MissionVertexType.valueOf(neighborKeySplit[0]), neighborKeySplit[1]);
 
                 edges.get(vertex).add(neighborVertex);
-                edgeWeights.get(vertex).put(neighborVertex, neighborEntry.getValue().getAsDouble());
+
+                JsonObject adjacencyData = neighborEntry.getValue().getAsJsonObject();
+
+                edgeWeights.get(vertex).put(neighborVertex, adjacencyData.get("length").getAsDouble());
+
+                LinkedList<Location> locs = new LinkedList<>();
+
+                for(JsonElement loc : adjacencyData.get("path").getAsJsonArray()) {
+                    String[] split = loc.getAsString().split(" ");
+                    locs.add(new Location(world, Integer.parseInt(split[0]), Integer.parseInt(split[1]), Integer.parseInt(split[2])));
+                }
+
+                edgePaths.get(vertex).put(neighborVertex, locs);
             }
         }
     }
@@ -142,6 +167,7 @@ public class MissionGraph {
         for(MissionVertex vertex : edges.keySet()) {
             graph.edges.put(vertex, new HashSet<>(edges.get(vertex)));
             graph.edgeWeights.put(vertex, new HashMap<>(edgeWeights.get(vertex)));
+            graph.edgePaths.put(vertex, new HashMap<>(edgePaths.get(vertex)));
         }
 
         return graph;
@@ -156,6 +182,7 @@ public class MissionGraph {
         for(MissionVertex vertex : edges.keySet()) {
             graph.edges.put(vertex, new HashSet<>(edges.get(vertex)));
             graph.edgeWeights.put(vertex, new HashMap<>(edgeWeights.get(vertex)));
+            graph.edgePaths.put(vertex, new HashMap<>(edgePaths.get(vertex)));
         }
 
         return graph;
@@ -168,7 +195,15 @@ public class MissionGraph {
             JsonObject neighbors = new JsonObject();
 
             for(MissionVertex adjacency : edges.get(edge)) {
-                neighbors.addProperty(adjacency.type + " " + adjacency.name, edgeWeights.get(edge).get(adjacency));
+                JsonObject adjacencyData = new JsonObject();
+                adjacencyData.addProperty("length", edgeWeights.get(edge).get(adjacency));
+                JsonArray pointsArray = new JsonArray();
+                for(Location loc : edgePaths.get(edge).get(adjacency)) {
+                    pointsArray.add(loc.getBlockX() + " " + loc.getBlockY() + " " + loc.getBlockZ());
+                }
+                adjacencyData.add("path", pointsArray);
+
+                neighbors.add(adjacency.type + " " + adjacency.name, adjacencyData);
             }
 
             data.add(edge.type + " " + edge.name, neighbors);
@@ -331,6 +366,7 @@ public class MissionGraph {
         return defineEdge(getVertex(vertexType1, name1), getVertex(vertexType2, name2));
     }
 
+    //uses A* world traversal algorithm
     public LocationPath defineEdge(MissionVertex begin, MissionVertex end) {
         if(!edges.containsKey(begin)) {
             edges.put(begin, new HashSet<>());
@@ -358,6 +394,16 @@ public class MissionGraph {
 
         edgeWeights.get(begin).put(end, path.pathLength);
         edgeWeights.get(end).put(begin, path.pathLength);
+
+        if(!edgePaths.containsKey(begin)) {
+            edgePaths.put(begin, new HashMap<>());
+        }
+        if(!edgePaths.containsKey(end)) {
+            edgePaths.put(end, new HashMap<>());
+        }
+
+        edgePaths.get(begin).put(end, path.path);
+        edgePaths.get(end).put(begin, path.path);
 
         return path;
     }
@@ -529,6 +575,86 @@ public class MissionGraph {
         distance = Math.round(distance * 100) / 100d;
 
         return new VertexPath(path, distance);
+    }
+
+    /**
+     * verify that the edge exists and is traversable
+     * @param type1
+     * @param name1
+     * @param type2
+     * @param name2
+     * @param visibleBlocks
+     * @return True if edge is traversable, false if there is something blocking the edge from letting the player go through
+     */
+    public boolean verifyEdgeTraversable(MissionVertexType type1, String name1, MissionVertexType type2, String name2, Set<Block> visibleBlocks) {
+        MissionVertex begin = getVertex(type1, name1);
+        MissionVertex end = getVertex(type2, name2);
+
+        if(verifiedEdges.containsKey(begin) && verifiedEdges.get(begin).contains(end)) {
+            return true;
+        }
+
+//        verifiedEdges.putIfAbsent(begin, new HashSet<>());
+//        verifiedEdges.get(begin).add(end);
+//
+//        verifiedEdges.putIfAbsent(end, new HashSet<>());
+//        verifiedEdges.get(end).add(begin);
+
+        LinkedList<Location> edgePath = edgePaths.get(begin).get(end);
+
+        for(Location loc : edgePath) {
+            //ground level match
+            if(visibleBlocks.contains(loc.getBlock())) {
+                if(visibleBlocks.contains(loc.getBlock().getRelative(0, 1, 0))) {
+                    return false;
+                }
+            }
+            //eye level match
+            if(visibleBlocks.contains(loc.getBlock().getRelative(0, 1, 0))) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Prevents edge from being removed
+     * @param type1
+     * @param name1
+     * @param type2
+     * @param name2
+     */
+    public void protectEdge(MissionVertexType type1, String name1, MissionVertexType type2, String name2) {
+        MissionVertex begin = getVertex(type1, name1);
+        MissionVertex end = getVertex(type2, name2);
+
+        verifiedEdges.putIfAbsent(begin, new HashSet<>());
+        verifiedEdges.putIfAbsent(end, new HashSet<>());
+
+        verifiedEdges.get(begin).add(end);
+        verifiedEdges.get(end).add(begin);
+    }
+
+    /**
+     * Deletes the edge both ways, if it exists
+     * @param type1
+     * @param name1
+     * @param type2
+     * @param name2
+     */
+    public void deleteEdge(MissionVertexType type1, String name1, MissionVertexType type2, String name2) {
+        MissionVertex begin = getVertex(type1, name1);
+        MissionVertex end = getVertex(type2, name2);
+
+        edges.get(begin).remove(end);
+        edges.get(end).remove(begin);
+
+        edgeWeights.get(begin).remove(end);
+        edgeWeights.get(end).remove(begin);
+
+        edgePaths.get(begin).remove(end);
+        edgePaths.get(end).remove(begin);
     }
 
     public Set<MissionVertex> getNeighbors(MissionVertex vertex) {

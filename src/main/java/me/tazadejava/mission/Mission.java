@@ -88,7 +88,7 @@ public class Mission {
                     decisionPoints.put(entry.getKey(), new Location(playerSpawnLocation.getWorld(), Double.parseDouble(split[0]), Double.parseDouble(split[1]), Double.parseDouble(split[2])));
                 }
 
-                originalGraph = new MissionGraph(this, main.getAsJsonObject("graphData"));
+                originalGraph = new MissionGraph(this, main.getAsJsonObject("graphData"), playerSpawnLocation.getWorld());
 
                 reader.close();
             }
