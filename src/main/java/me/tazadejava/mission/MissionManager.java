@@ -236,6 +236,10 @@ public class MissionManager {
         return missionInProgress && currentMission == mission;
     }
 
+    public Mission getCurrentMission() {
+        return currentMission;
+    }
+
     private void endMission(boolean saveLog) {
         if(saveLog) {
             saveLog();
@@ -266,6 +270,20 @@ public class MissionManager {
         }
 
         return missions.values();
+    }
+
+    public PlayerAnalyzer getPlayerAnalyzer(Player p) {
+        if(playerAnalyzers == null) {
+            return null;
+        }
+
+        for(PlayerAnalyzer analyzer : playerAnalyzers) {
+            if(analyzer.getPlayer().equals(p)) {
+                return analyzer;
+            }
+        }
+
+        return null;
     }
 
     private void saveLog() {

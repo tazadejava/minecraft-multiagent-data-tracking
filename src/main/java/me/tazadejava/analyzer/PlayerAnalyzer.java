@@ -75,6 +75,8 @@ public class PlayerAnalyzer {
     private Set<MissionGraph.MissionVertex> visitedVertices;
     private Set<MissionGraph.MissionVertex> unvisitedRooms;
 
+    private boolean shouldUpdatePlayerGraph = false;
+
     //roomSpeed: average MS per block in the room
     //decisionSpeed: average blocks per MS
     private double averagePlayerDecisionTraversalSpeed, averagePlayerRoomTriageSpeed;
@@ -91,6 +93,7 @@ public class PlayerAnalyzer {
     private static final boolean PRINT = true;
     private TextComponent actionBarMessage = null;
     private List<String> bestPathFormat;
+    private List<MissionGraph.MissionVertex> lastBestPath;
 
     public PlayerAnalyzer(Player player, Mission mission) {
         this.player = player;
@@ -319,7 +322,7 @@ public class PlayerAnalyzer {
                                 Bukkit.broadcastMessage("" + ChatColor.GOLD + ChatColor.BOLD + "FOUND EDGE BETWEEN ROOMS " + originalRoom.getRoomName() + " AND " + compareRoom.getRoomName()+ " WITH LENGTH " + mission.getMissionGraph().getShortestPathUsingEdges(MissionGraph.MissionVertexType.ROOM, originalRoom.getRoomName(), MissionGraph.MissionVertexType.ROOM, compareRoom.getRoomName()).getPathLength());
 
                                 //recalculate best path
-                                lastVertex = null;
+                                shouldUpdatePlayerGraph = true;
                             }
                         }
                     }
@@ -334,7 +337,7 @@ public class PlayerAnalyzer {
                     Bukkit.broadcastMessage("" + ChatColor.RED + ChatColor.BOLD + "THE EDGE BETWEEN " + lastVertex + " AND " + neighbor + " IS NOT TRAVERSABLE!");
                     mission.getMissionGraph().deleteEdge(lastVertex.type, lastVertex.name, neighbor.type, neighbor.name);
 
-                    lastVertex = null;
+                    shouldUpdatePlayerGraph = true;
                     break;
                 }
             }
@@ -690,12 +693,21 @@ public class PlayerAnalyzer {
         }
 
         //based on this result, output where the player can go next
-        if(playerVertex != null) {
-            if(!playerVertex.equals(lastVertex)) {
+        if((shouldUpdatePlayerGraph && lastVertex != null) || playerVertex != null) {
+            if(shouldUpdatePlayerGraph || !playerVertex.equals(lastVertex)) {
+                if(shouldUpdatePlayerGraph) {
+                    shouldUpdatePlayerGraph = false;
+
+                    if(playerVertex == null) {
+                        playerVertex = lastVertex;
+                    }
+                }
+
                 //best path
 
 //                HashMap<MissionGraph.MissionVertex, Double> roomPotentials = calculateRoomPotentials(playerVertex);
                 List<MissionGraph.MissionVertex> bestPath = calculateBestPath(playerVertex);
+                lastBestPath = bestPath;
 
                 bestPathFormat = new ArrayList<>();
                 HashMap<String, Integer> visitedVerticesCount = new HashMap<>();
@@ -992,5 +1004,9 @@ public class PlayerAnalyzer {
 
     public Player getPlayer() {
         return player;
+    }
+
+    public List<MissionGraph.MissionVertex> getLastBestPath() {
+        return lastBestPath;
     }
 }

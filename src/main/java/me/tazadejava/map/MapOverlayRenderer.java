@@ -70,7 +70,7 @@ public class MapOverlayRenderer extends MapRenderer {
         byte direction = (byte) Math.floor(((player.getLocation().getYaw() % 360) / 360d) * 16);
 
         try {
-            InputStream stream = getClass().getClassLoader().getResourceAsStream("sparky_map.png");
+            InputStream stream = getClass().getClassLoader().getResourceAsStream("sparky_map_annotated.png");
             BufferedImage image = ImageIO.read(stream);
             canvas.drawImage(0, 0, image);
             stream.close();

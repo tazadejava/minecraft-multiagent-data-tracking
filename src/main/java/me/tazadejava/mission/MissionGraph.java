@@ -676,6 +676,13 @@ public class MissionGraph {
         return true;
     }
 
+    public LinkedList<Location> getExactPathBetweenEdges(MissionVertexType type1, String name1, MissionVertexType type2, String name2) {
+        MissionVertex begin = getVertex(type1, name1);
+        MissionVertex end = getVertex(type2, name2);
+
+        return edgePaths.get(begin).get(end);
+    }
+
     public double getEdgeWeight(MissionVertex begin, MissionVertex end) {
         return edgeWeights.get(begin).get(end);
     }
