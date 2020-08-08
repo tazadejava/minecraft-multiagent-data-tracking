@@ -2,8 +2,11 @@ package me.tazadejava.analyzer;
 
 import com.google.gson.JsonObject;
 import me.tazadejava.blockranges.BlockRange2D;
+import me.tazadejava.map.DynamicMapRenderer;
+import me.tazadejava.map.MapOverlayRenderer;
 import me.tazadejava.mission.Mission;
 import me.tazadejava.mission.MissionGraph;
+import me.tazadejava.mission.MissionManager;
 import me.tazadejava.mission.MissionRoom;
 import me.tazadejava.statstracker.EnhancedStatsTracker;
 import me.tazadejava.statstracker.PreciseVisibleBlocksRaycaster;
@@ -17,7 +20,6 @@ import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.entity.Player;
-import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scoreboard.DisplaySlot;
 import org.bukkit.scoreboard.Objective;
 import org.bukkit.scoreboard.Scoreboard;
@@ -92,10 +94,13 @@ public class PlayerAnalyzer {
 
     private static final boolean PRINT = true;
     private TextComponent actionBarMessage = null;
+    private String lastRecommendationMessage;
     private List<String> bestPathFormat;
     private List<MissionGraph.MissionVertex> lastBestPath;
 
-    public PlayerAnalyzer(Player player, Mission mission) {
+    private static final boolean DEBUG_PRINT = false;
+
+    public PlayerAnalyzer(Player player, Mission mission, MissionManager missionManager) {
         this.player = player;
         this.mission = mission;
 
@@ -110,6 +115,15 @@ public class PlayerAnalyzer {
         currentRoom = null;
 
         calculateRelativeHumanDirections();
+
+        //give the player a map
+        if(DEBUG_PRINT) {
+            player.getInventory().setItemInMainHand(DynamicMapRenderer.getMap(missionManager, player));
+            player.getInventory().setItemInOffHand(MapOverlayRenderer.getMap());
+        } else {
+            player.getInventory().setItemInMainHand(DynamicMapRenderer.getMap(missionManager, player));
+        }
+
     }
 
     private void calculateRelativeHumanDirections() {
@@ -161,21 +175,64 @@ public class PlayerAnalyzer {
         //possibly recalculate edges
         analyzeMissionGraphEdges();
 
-        if(actionBarMessage != null) {
+        if (actionBarMessage != null) {
             player.spigot().sendMessage(ChatMessageType.ACTION_BAR, actionBarMessage);
         }
-        if(bestPathFormat != null) {
-            Scoreboard scoreboard = Bukkit.getScoreboardManager().getNewScoreboard();
 
-            Objective objective = scoreboard.registerNewObjective("path", "dummy", "" + ChatColor.GREEN + ChatColor.BOLD + "Best Path:");
+        if(DEBUG_PRINT) {
+            if (bestPathFormat != null) {
+                Scoreboard scoreboard = Bukkit.getScoreboardManager().getNewScoreboard();
 
-            objective.setDisplaySlot(DisplaySlot.SIDEBAR);
+                Objective objective = scoreboard.registerNewObjective("path", "dummy", "" + ChatColor.GREEN + ChatColor.BOLD + "Best Path:");
 
-            for(int i = 0; i < (bestPathFormat.size() < 16 ? bestPathFormat.size() : 16); i++) {
-                objective.getScore(bestPathFormat.get(i)).setScore(-(i + 1));
+                objective.setDisplaySlot(DisplaySlot.SIDEBAR);
+
+                for (int i = 0; i < (bestPathFormat.size() < 16 ? bestPathFormat.size() : 16); i++) {
+                    objective.getScore(bestPathFormat.get(i)).setScore(-(i + 1));
+                }
+
+                player.setScoreboard(scoreboard);
             }
+        } else {
+            if (lastRecommendationMessage != null) {
+                Scoreboard scoreboard = Bukkit.getScoreboardManager().getNewScoreboard();
 
-            player.setScoreboard(scoreboard);
+                Objective objective = scoreboard.registerNewObjective("path", "dummy", "" + ChatColor.GREEN + ChatColor.BOLD + "Next Move:");
+
+                objective.setDisplaySlot(DisplaySlot.SIDEBAR);
+
+                if(lastRecommendationMessage.length() > 32) {
+                    List<String> messages = new ArrayList<>();
+
+                    String message = lastRecommendationMessage;
+                    while(message.length() > 32) {
+                        int bestIndex = 0;
+                        int index;
+                        String currentString = message;
+                        while((index = currentString.indexOf(" ")) != -1) {
+                            if(bestIndex + index > 32) {
+                                break;
+                            }
+
+                            bestIndex += index + 1;
+                            currentString = currentString.substring(index + 1);
+                        }
+
+                        messages.add(message.substring(0, bestIndex));
+                        message = message.substring(bestIndex);
+                    }
+
+                    messages.add(message);
+
+                    for(int i = 0; i < messages.size(); i++) {
+                        objective.getScore(ChatColor.LIGHT_PURPLE + messages.get(i)).setScore(messages.size() - i - 1);
+                    }
+                } else {
+                    objective.getScore(lastRecommendationMessage).setScore(0);
+                }
+
+                player.setScoreboard(scoreboard);
+            }
         }
     }
 
@@ -545,7 +602,11 @@ public class PlayerAnalyzer {
                 timeToFinishMsg = ChatColor.YELLOW + "EST. TIME LEFT: ...";
             }
 
-            actionBarMessage = new TextComponent(ChatColor.GREEN + "PATH LENGTH: " + ((Math.round(totalPathLength * 100d) / 100d)) + " BLOCKS" + ChatColor.WHITE + ChatColor.BOLD + " | " + timeToFinishMsg);
+            if(DEBUG_PRINT) {
+                actionBarMessage = new TextComponent(ChatColor.GREEN + "PATH LENGTH: " + ((Math.round(totalPathLength * 100d) / 100d)) + " BLOCKS" + ChatColor.WHITE + ChatColor.BOLD + " | " + timeToFinishMsg);
+            } else {
+                actionBarMessage = new TextComponent(timeToFinishMsg);
+            }
         }
 
         return reconstructedPath;
@@ -795,12 +856,12 @@ public class PlayerAnalyzer {
                 Direction roomDir = getDirection(playerToRoomLoc);
 
                 if(bestPath.get(0).type == MissionGraph.MissionVertexType.DECISION) {
-                    Bukkit.broadcastMessage(ChatColor.LIGHT_PURPLE + "You should enter the room " + relativeHumanDirections.get(playerDir).get(roomDir) + ".");
+                    lastRecommendationMessage = ChatColor.LIGHT_PURPLE + "You should enter the room " + relativeHumanDirections.get(playerDir).get(roomDir) + ".";
                 } else {
                     if(visitedVertices.contains(bestPath.get(0))) {
-                        Bukkit.broadcastMessage(ChatColor.LIGHT_PURPLE + "You should enter the room " + relativeHumanDirections.get(playerDir).get(roomDir) + ".");
+                        lastRecommendationMessage = ChatColor.LIGHT_PURPLE + "You should enter the room " + relativeHumanDirections.get(playerDir).get(roomDir) + ".";
                     } else {
-                        Bukkit.broadcastMessage(ChatColor.LIGHT_PURPLE + "After you explore this room, you should enter the room " + relativeHumanDirections.get(playerDir).get(roomDir) + ".");
+                        lastRecommendationMessage = ChatColor.LIGHT_PURPLE + "After you explore this room, you should enter the room " + relativeHumanDirections.get(playerDir).get(roomDir) + ".";
                     }
                 }
             } else {
@@ -809,22 +870,26 @@ public class PlayerAnalyzer {
                 Direction roomDir = getDirection(playerToRoomLoc);
 
                 if(bestPath.get(0).type == MissionGraph.MissionVertexType.DECISION) {
-                    Bukkit.broadcastMessage(ChatColor.LIGHT_PURPLE + "Continue the hallway " + relativeHumanDirections.get(playerDir).get(roomDir) + ".");
+                    lastRecommendationMessage = ChatColor.LIGHT_PURPLE + "Continue the hallway " + relativeHumanDirections.get(playerDir).get(roomDir) + ".";
                 } else {
                     if(visitedVertices.contains(bestPath.get(0))) {
                         if(lastVertex != null && lastVertex.equals(bestPath.get(1))) {
-                            Bukkit.broadcastMessage(ChatColor.LIGHT_PURPLE + "You should exit the same way you came in.");
+                            lastRecommendationMessage = ChatColor.LIGHT_PURPLE + "You should exit the same way you came in.";
                         } else {
-                            Bukkit.broadcastMessage(ChatColor.LIGHT_PURPLE + "You should exit the room via the opening " + relativeHumanDirections.get(playerDir).get(roomDir) + ".");
+                            lastRecommendationMessage = ChatColor.LIGHT_PURPLE + "You should exit the room via the opening " + relativeHumanDirections.get(playerDir).get(roomDir) + ".";
                         }
                     } else {
                         if(lastVertex != null && lastVertex.equals(bestPath.get(1))) {
-                            Bukkit.broadcastMessage(ChatColor.LIGHT_PURPLE + "After you explore this room, you should exit the same way you came in.");
+                            lastRecommendationMessage = ChatColor.LIGHT_PURPLE + "After you explore this room, you should exit the same way you came in.";
                         } else {
-                            Bukkit.broadcastMessage(ChatColor.LIGHT_PURPLE + "After you explore this room, you should exit the room via the opening " + relativeHumanDirections.get(playerDir).get(roomDir) + ".");
+                            lastRecommendationMessage = ChatColor.LIGHT_PURPLE + "After you explore this room, you should exit the room via the opening " + relativeHumanDirections.get(playerDir).get(roomDir) + ".";
                         }
                     }
                 }
+            }
+
+            if(DEBUG_PRINT) {
+                Bukkit.broadcastMessage(lastRecommendationMessage);
             }
         }
     }

@@ -6,10 +6,11 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.stream.JsonReader;
 import me.tazadejava.analyzer.PlayerAnalyzer;
+import me.tazadejava.map.GraphGenerator;
 import me.tazadejava.statstracker.EnhancedStatsTracker;
 import me.tazadejava.statstracker.StatsTracker;
-import me.tazadejava.statstracker.StreamlinedStatsTracker;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.boss.BarColor;
 import org.bukkit.boss.BarStyle;
 import org.bukkit.boss.BossBar;
@@ -130,6 +131,18 @@ public class MissionManager {
         return true;
     }
 
+    public boolean createMission(String missionName, Location playerLocation, File csvFile, int startX, int startY, int startZ) {
+        if(missions.containsKey(missionName.toLowerCase())) {
+            return false;
+        }
+
+        String missionID = GraphGenerator.generateGraphFromCSV(csvFile, plugin.getDataFolder(), startX, startY, startZ);
+
+        missions.put(missionName.toLowerCase(), new Mission(missionName, missionID, plugin.getDataFolder(), playerLocation));
+        saveData();
+        return true;
+    }
+
     public boolean startMission(CommandSender missionInitiator, Mission mission) {
         if(missionInProgress) {
             return false;
@@ -154,7 +167,7 @@ public class MissionManager {
         for(Player p : statsTracker.getPlayerList()) {
             countdown.addPlayer(p);
 
-            playerAnalyzers.add(new PlayerAnalyzer(p, mission));
+            playerAnalyzers.add(new PlayerAnalyzer(p, mission, this));
 
             p.teleport(mission.getPlayerSpawnLocation());
         }

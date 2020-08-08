@@ -25,6 +25,23 @@ public class Mission {
 
     private MissionGraph originalGraph, currentMissionGraph;
 
+    /**
+     * Import from a CSV file constructor
+     * @param missionName
+     * @param missionID
+     * @param dataFolder
+     */
+    public Mission(String missionName, String missionID, File dataFolder, Location playerSpawnLocation) {
+        this.missionName = missionName;
+        this.missionID = missionID;
+        this.playerSpawnLocation = playerSpawnLocation;
+
+        //todo: make this an argument instead of setting for the player
+        duration = 1000;
+
+        loadMissionFolderData(dataFolder, new Gson());
+    }
+
     public Mission(String missionName) {
         this.missionName = missionName;
 

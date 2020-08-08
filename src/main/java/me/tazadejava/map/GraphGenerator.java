@@ -1,22 +1,185 @@
 package me.tazadejava.map;
 
-import me.tazadejava.mission.MissionGraph;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import me.tazadejava.blockranges.BlockRange2D;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileReader;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
+import java.io.*;
+import java.time.LocalDateTime;
+import java.util.*;
 
 //goal: creates a graph representation of a file based on a CSV file
+
+/*
+TODO: THIS IMPLEMENTATION IS ALMOST CORRECT
+
+TOFIX:
+
+- the room boundaries are wrong when determining edges to create between rooms. check on that!
+ */
 public class GraphGenerator {
+
+    public static class PointPath {
+
+        private LinkedList<Point> path;
+        private double pathLength;
+
+        public PointPath(LinkedList<Point> path, double pathLength) {
+            this.path = path;
+            this.pathLength = pathLength;
+        }
+
+        public LinkedList<Point> getPath() {
+            return path;
+        }
+
+        public double getPathLength() {
+            return pathLength;
+        }
+    }
+
+    public static class DecisionPoint {
+
+        private double row, col;
+
+        public HashMap<BlockRange2D, PointPath> connectedRooms = new HashMap<>();
+        public HashMap<DecisionPoint, PointPath> connectedDecisionPoints = new HashMap<>();
+
+        public DecisionPoint(double x, double z) {
+            this.row = x;
+            this.col = z;
+        }
+
+        public boolean inBounds(String[][] mapping) {
+            if(row < 0 || col < 0) {
+                return false;
+            }
+            if(row >= mapping.length || col >= mapping[(int) row].length) {
+                return false;
+            }
+
+            return true;
+        }
+
+        public int getRow() {
+            return (int) row;
+        }
+
+        public int getCol() {
+            return (int) col;
+        }
+
+        public String get(String[][] mapping) {
+            return mapping[(int) row][(int) col];
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            DecisionPoint point = (DecisionPoint) o;
+            return row == point.row &&
+                    col == point.col;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(row, col);
+        }
+
+        @Override
+        public String toString() {
+            return "(" + row + ", " + col + ")";
+        }
+    }
+
+    public static class Point {
+        private int row, col;
+
+        public Point(int row, int col) {
+            this.row = row;
+            this.col = col;
+        }
+
+        public int getRow() {
+            return row;
+        }
+
+        public int getCol() {
+            return col;
+        }
+
+        public int[] getDelta(Point point) {
+            return new int[] {row > point.row ? -1 : (row < point.row ? 1 : 0), col > point.col ? -1 : (col < point.col ? 1 : 0)};
+        }
+
+        public Point inDirection(int[] delta) {
+            if(delta.length < 2) {
+                return null;
+            }
+
+            return new Point(row + delta[0], col + delta[1]);
+        }
+
+        public boolean inBounds(String[][] mapping) {
+            if(row < 0 || col < 0) {
+                return false;
+            }
+            if(row >= mapping.length || col >= mapping[row].length) {
+                return false;
+            }
+
+            return true;
+        }
+
+        public String get(String[][] mapping) {
+            return mapping[row][col];
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            Point point = (Point) o;
+            return row == point.row &&
+                    col == point.col;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(row, col);
+        }
+
+        @Override
+        public String toString() {
+            return "(" + row + ", " + col + ")";
+        }
+    }
+
+    public static class EnclosedSpace {
+
+        public Set<Point> enclosedSpace;
+        public int adjacentDoorCount;
+
+        public EnclosedSpace(Set<Point> enclosedSpace, int adjacentDoorCount) {
+            this.enclosedSpace = enclosedSpace;
+            this.adjacentDoorCount = adjacentDoorCount;
+        }
+    }
+
+    private static final int[] DIRECTION_DELTAS = {
+            0, 1,
+            0, -1,
+            1, 0,
+            -1, 0
+    };
 
     public static void main(String[] args) {
         File file = new File("/home/yoshi/Documents/GenesisUROP/OriginalMaps/sparky.csv");
 
-        MissionGraph graph = getGraphFromCSV(file);
+        generateGraphFromCSV(file, new File("/home/yoshi/Documents/GenesisUROP/test/"), -2153, 52, 153);
     }
 
     //assumes CSV file
@@ -27,7 +190,22 @@ public class GraphGenerator {
     //room definition:
     //  space with at least 2x2 space
     //  surrounded by either door or a 1x1 area to get out
-    public static MissionGraph getGraphFromCSV(File inputFile) {
+    //needs the start X and Z from top right to correctly place in real world
+
+    /**
+     * Generates a graph from a CSV file, and pastes the UUID folder in the outputDirectory
+     * @param inputFile
+     * @param outputDirectory
+     * @param startX
+     * @param y
+     * @param startZ
+     * @return The ID that was generated for this data
+     */
+    public static String generateGraphFromCSV(File inputFile, File outputDirectory, int startX, int y, int startZ) {
+        //adjust for manual border
+        startX -= 1;
+        startZ -= 1;
+
         List<String[]> lines = new ArrayList<>();
 
         try {
@@ -68,11 +246,790 @@ public class GraphGenerator {
 
         String[][] mapping = lines.toArray(new String[0][0]);
 
-        for(String[] row : mapping) {
-            System.out.println(Arrays.toString(row));
+        formatPrint(mapping);
+
+        //first, find all enclosed spaces
+
+        Set<Point> traversedPoints = new HashSet<>(); //all empty areas
+        List<Set<Point>> enclosedSpaces = new ArrayList<>();
+        List<Integer> adjacentDoors = new ArrayList<>();
+
+        for(int x = 0; x < mapping.length; x++) {
+            for(int z = 0; z < mapping[x].length; z++) {
+                Point point = new Point(x, z);
+
+                if(!point.get(mapping).isEmpty()) {
+                    continue;
+                }
+
+                if(!traversedPoints.contains(point)) {
+                    EnclosedSpace space = getEnclosedSpace(point, mapping);
+
+                    enclosedSpaces.add(space.enclosedSpace);
+                    traversedPoints.addAll(space.enclosedSpace);
+                    adjacentDoors.add(space.adjacentDoorCount);
+                }
+            }
+        }
+
+        //next, classify rooms and hallways
+
+        /*
+        room definition: not a hallway, bounded rectangularly
+
+        hallway definition: number of doors > 4
+
+         */
+
+        Set<Point> hallwayPoints = null;
+        int doors = 0;
+
+        for(int i = 0; i < enclosedSpaces.size(); i++) {
+            if(adjacentDoors.get(i) > doors) {
+                doors = adjacentDoors.get(i);
+                hallwayPoints = enclosedSpaces.get(i);
+            }
+        }
+
+        //if no hallway found, then this algorithm needs to be revised
+        if(hallwayPoints == null) {
+            return null;
+        }
+
+        //based on this definition, then hallways with 1x1 pathways anywhere are separate and should be split into rooms
+
+        System.out.println("Now checking for rooms without doors!");
+
+        Set<Point> roomSeparationPoints = new HashSet<>();
+
+        for(Point point : hallwayPoints) {
+            int nonAirCounter = 0;
+
+            for(int i = 0; i < 4; i++) {
+                Point adjacent = new Point(point.row + DIRECTION_DELTAS[i * 2], point.col + DIRECTION_DELTAS[i * 2 + 1]);
+
+                if(adjacent.inBounds(mapping)) {
+                    if (!adjacent.get(mapping).isEmpty()) {
+                        nonAirCounter++;
+                    }
+                }
+            }
+
+            if(nonAirCounter == 2) {
+                roomSeparationPoints.add(point);
+            }
+        }
+
+        System.out.println(roomSeparationPoints);
+
+        //if exists a connection of 3 adjacent points or more in one direction, then it is a separate room
+
+        for(Point separationPoint : roomSeparationPoints) {
+            int adjacentSeparateRoomPointsNorthSouth = 0;
+            int adjacentSeparateRoomPointsEastWest = 0;
+            for(int i = 0; i < 4; i++) {
+                Point adjacent = new Point(separationPoint.row + DIRECTION_DELTAS[i * 2], separationPoint.col + DIRECTION_DELTAS[i * 2 + 1]);
+
+                if(adjacent.inBounds(mapping)) {
+                    if(roomSeparationPoints.contains(adjacent)) {
+                        if(i < 2) {
+                            adjacentSeparateRoomPointsNorthSouth++;
+                        } else {
+                            adjacentSeparateRoomPointsEastWest++;
+                        }
+                    }
+                }
+            }
+
+            //we found a separate room
+            if(adjacentSeparateRoomPointsNorthSouth >= 2 || adjacentSeparateRoomPointsEastWest >= 2) {
+                //find out which side is the room and which is the hallway
+                Stack<Point> openList = new Stack<>();
+                Set<Point> emptyTiles = new HashSet<>();
+                HashMap<Point, Point> emptyTileParents = new HashMap<>();
+                Set<Point> visited = new HashSet<>();
+
+                openList.add(separationPoint);
+                visited.add(separationPoint);
+
+                while(!openList.isEmpty()) {
+                    Point currentPoint = openList.pop();
+                    for(int i = 0; i < 4; i++) {
+                        Point adjacent = new Point(currentPoint.row + DIRECTION_DELTAS[i * 2], currentPoint.col + DIRECTION_DELTAS[i * 2 + 1]);
+
+                        if(!adjacent.inBounds(mapping)) {
+                            continue;
+                        }
+                        if(visited.contains(adjacent)) {
+                            continue;
+                        }
+
+                        if(adjacent.get(mapping).isEmpty() && !roomSeparationPoints.contains(adjacent)) {
+                            emptyTiles.add(adjacent);
+                            emptyTileParents.put(adjacent, currentPoint);
+                        } else {
+                            if (roomSeparationPoints.contains(adjacent)) {
+                                openList.add(adjacent);
+                                visited.add(adjacent);
+                            }
+                        }
+                    }
+                }
+
+                for(Point emptyTile : emptyTiles) {
+                    EnclosedSpace space = getEnclosedSpace(emptyTile, mapping, visited);
+
+                    //is the room
+                    if(space.adjacentDoorCount <= 4) {
+                        space.enclosedSpace.addAll(visited);
+
+                        hallwayPoints.removeAll(space.enclosedSpace);
+                        enclosedSpaces.add(space.enclosedSpace);
+                        adjacentDoors.add(space.adjacentDoorCount);
+                    } else {
+                        Point parent = emptyTileParents.get(emptyTile);
+
+                        //to simplify decision point creation, place a fake door at this point!
+                        mapping[parent.row][parent.col] = "D";
+                    }
+                }
+            }
+        }
+
+        //next, rooms with less than 4 tiles should be merged with the adjacent room
+        //rooms that are significantly smaller than the adjacent room will be merged
+
+        System.out.println("Now checking undersized rooms and merging small adjacent rooms!");
+
+        int index = 0;
+        Iterator<Set<Point>> enclosedSpaceIterator = enclosedSpaces.iterator();
+        while(enclosedSpaceIterator.hasNext()) {
+            Set<Point> enclosedSpace = enclosedSpaceIterator.next();
+            if(enclosedSpace.size() < 4) {
+                for(Point point : enclosedSpace) {
+                    for(int i = 0; i < 4; i++) {
+                        Point adjacent = new Point(point.row + DIRECTION_DELTAS[i * 2], point.col + DIRECTION_DELTAS[i * 2 + 1]);
+
+                        if(adjacent.get(mapping).equals("D")) {
+                            Point searchPoint = new Point(adjacent.row + DIRECTION_DELTAS[i * 2], adjacent.col + DIRECTION_DELTAS[i * 2 + 1]);
+                            for(Set<Point> adjacentEnclosedSpace : enclosedSpaces) {
+                                if(adjacentEnclosedSpace.contains(searchPoint)) {
+                                    adjacentEnclosedSpace.addAll(enclosedSpace);
+                                    adjacentEnclosedSpace.add(adjacent);
+                                    enclosedSpaceIterator.remove();
+                                    adjacentDoors.remove(index);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if (enclosedSpace.size() <= 16) {
+                //this may or may not be the best heuristic to determining this!
+                smallEnclosedSpace:
+                for(Point point : enclosedSpace) {
+                    for(int i = 0; i < 4; i++) {
+                        Point adjacent = new Point(point.row + DIRECTION_DELTAS[i * 2], point.col + DIRECTION_DELTAS[i * 2 + 1]);
+
+                        if(adjacent.get(mapping).equals("D")) {
+                            Point adjacentAdjacent = adjacent.inDirection(new int[] {DIRECTION_DELTAS[i * 2], DIRECTION_DELTAS[i * 2 + 1]});
+                            if(traversedPoints.contains(adjacentAdjacent)) {
+                                if(!hallwayPoints.contains(adjacentAdjacent)) {
+                                    for(Set<Point> adjacentSpace : enclosedSpaces) {
+                                        if(adjacentSpace.contains(adjacentAdjacent)) {
+                                            adjacentSpace.addAll(enclosedSpace);
+                                            adjacentSpace.add(adjacent);
+
+                                            enclosedSpaceIterator.remove();
+                                            adjacentDoors.remove(index);
+                                            break smallEnclosedSpace;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            index++;
+        }
+
+        System.out.println("Now determining room bounds!");
+
+        List<BlockRange2D> roomRanges = new ArrayList<>();
+
+        for(Set<Point> points : enclosedSpaces) {
+            if(points == hallwayPoints) {
+                continue;
+            }
+
+            int minX = Integer.MAX_VALUE;
+            int minZ = Integer.MAX_VALUE;
+            int maxX = Integer.MIN_VALUE;
+            int maxZ = Integer.MIN_VALUE;
+            for(Point point : points) {
+                minX = Math.min(point.row, minX);
+                minZ = Math.min(point.col, minZ);
+                maxX = Math.max(point.row, maxX);
+                maxZ = Math.max(point.col, maxZ);
+            }
+
+            roomRanges.add(new BlockRange2D(minX, maxX, minZ, maxZ));
+        }
+
+        System.out.println("Now determining initial decision points!");
+
+        //decision point algorithm:
+        //doors will always have a decision point if pointing to the hallway, in the middle of the hallway
+        //decision points that are 1-2 blocks away will be merged to the average location
+
+        List<DecisionPoint> decisionPoints = new ArrayList<>();
+
+        for(BlockRange2D roomRange : roomRanges) {
+            //loop through perimeter of room, looking for doors to append decision points to
+            for(int row = roomRange.startX; row <= roomRange.endX; row++) {
+                //left
+                Point roomPoint = new Point(row, roomRange.startZ);
+                Point doorPoint = new Point(row, roomRange.startZ - 1);
+                addPotentialDecisionPoint(decisionPoints, roomRange, roomPoint, doorPoint, hallwayPoints, mapping);
+
+                //right
+                roomPoint = new Point(row, roomRange.endZ);
+                doorPoint = new Point(row, roomRange.endZ + 1);
+                addPotentialDecisionPoint(decisionPoints, roomRange, roomPoint, doorPoint, hallwayPoints, mapping);
+            }
+
+            for(int col = roomRange.startZ; col <= roomRange.endZ; col++) {
+                //up
+                Point roomPoint = new Point(roomRange.startX, col);
+                Point doorPoint = new Point(roomRange.startX - 1, col);
+                addPotentialDecisionPoint(decisionPoints, roomRange, roomPoint, doorPoint, hallwayPoints, mapping);
+
+                //down
+                roomPoint = new Point(roomRange.endX, col);
+                doorPoint = new Point(roomRange.endX + 1, col);
+                addPotentialDecisionPoint(decisionPoints, roomRange, roomPoint, doorPoint, hallwayPoints, mapping);
+            }
+        }
+
+        System.out.println("Connecting all decision points to each other with shortest paths and creating extra points when needed!");
+
+        //first, expand line segments for all decision points to find collisions between the x and z axes
+
+        Set<DecisionPoint> rowExpansionPoints = new HashSet<>();
+        Set<DecisionPoint> colExpansionPoints = new HashSet<>();
+        Set<DecisionPoint> collisionPoints = new HashSet<>();
+
+        for(DecisionPoint decisionPoint : decisionPoints) {
+            //expand row (left to right)
+            expandDecisionPointLineInDirection(colExpansionPoints, rowExpansionPoints, collisionPoints, decisionPoint, 0, -1, mapping, decisionPoints, false);
+            expandDecisionPointLineInDirection(colExpansionPoints, rowExpansionPoints, collisionPoints, decisionPoint, 0, 1, mapping, decisionPoints, false);
+            //expand col
+            expandDecisionPointLineInDirection(rowExpansionPoints, colExpansionPoints, collisionPoints, decisionPoint, -1, 0, mapping, decisionPoints, false);
+            expandDecisionPointLineInDirection(rowExpansionPoints, colExpansionPoints, collisionPoints, decisionPoint, 1, 0, mapping, decisionPoints, false);
+        }
+        System.out.println("    Determining new decision points to be made...");
+
+        if(!collisionPoints.isEmpty()) {
+            System.out.println("    Adding " + collisionPoints.size() + " new decision points!");
+            decisionPoints.addAll(collisionPoints);
+        }
+
+        System.out.println("    Now, connecting all decision points!");
+
+        for(DecisionPoint decisionPoint : decisionPoints) {
+            //expand row (left to right)
+            expandDecisionPointLineInDirection(colExpansionPoints, rowExpansionPoints, collisionPoints, decisionPoint, 0, -1, mapping, decisionPoints, true);
+            expandDecisionPointLineInDirection(colExpansionPoints, rowExpansionPoints, collisionPoints, decisionPoint, 0, 1, mapping, decisionPoints, true);
+            //expand col
+            expandDecisionPointLineInDirection(rowExpansionPoints, colExpansionPoints, collisionPoints, decisionPoint, -1, 0, mapping, decisionPoints, true);
+            expandDecisionPointLineInDirection(rowExpansionPoints, colExpansionPoints, collisionPoints, decisionPoint, 1, 0, mapping, decisionPoints, true);
+        }
+
+        String missionID = UUID.randomUUID().toString() + "-" + LocalDateTime.now().toString();
+        missionID = missionID.replaceAll("[^a-zA-Z0-9]", "");
+
+        System.out.println("Creating a new graph folder: ID generated: " + missionID);
+
+        File folder = new File(outputDirectory + "/" + missionID + "/");
+        folder.mkdir();
+
+        System.out.println("Creating rooms.json...");
+        System.out.println("Creating decisionGraph.json...");
+
+        try {
+            File rooms = new File(folder.getAbsolutePath() + "/rooms.json");
+            File decisionGraph = new File(folder.getAbsolutePath() + "/decisionGraph.json");
+
+            rooms.createNewFile();
+            decisionGraph.createNewFile();
+
+            Gson gson = new GsonBuilder().setPrettyPrinting().create();
+
+            //create rooms json
+
+            JsonObject roomsData = new JsonObject();
+
+            HashMap<BlockRange2D, JsonObject> roomGraphData = new HashMap<>();
+
+            int roomIndex = 0;
+            for(BlockRange2D room : roomRanges) {
+                roomGraphData.put(room, new JsonObject());
+
+                JsonObject roomSpecificData = new JsonObject();
+
+                JsonObject boundsData = new JsonObject();
+
+                //expand to encapsulate borders
+                room.expand(1);
+
+                //convert from row/col to x/z
+                boundsData.addProperty("startX", room.startZ + startX);
+                boundsData.addProperty("startZ", room.startX + startZ);
+                boundsData.addProperty("endX", room.endZ + startX);
+                boundsData.addProperty("endZ", room.endX + startZ);
+
+                roomSpecificData.add("bounds", boundsData);
+
+                roomsData.add(String.valueOf(roomIndex), roomSpecificData);
+
+                roomIndex++;
+            }
+
+            FileWriter writer = new FileWriter(rooms);
+            gson.toJson(roomsData, writer);
+            writer.close();
+
+            //create decision graphs json
+
+            JsonObject decisionData = new JsonObject();
+
+            JsonObject decisionPointsList = new JsonObject();
+            JsonObject graphData = new JsonObject();
+
+            int decisionIndex = 0;
+            for(DecisionPoint point : decisionPoints) {
+                decisionPointsList.addProperty(String.valueOf(decisionIndex), decisionPointToLocation(point, startX, y, startZ));
+
+                JsonObject decisionNodeData = new JsonObject();
+
+                for(DecisionPoint adjacent : point.connectedDecisionPoints.keySet()) {
+                    PointPath path = point.connectedDecisionPoints.get(adjacent);
+
+                    JsonObject pathData = new JsonObject();
+
+                    pathData.addProperty("length", path.getPathLength());
+
+                    JsonArray pathCoordinates = new JsonArray();
+
+                    for(Point pathPoint : path.path) {
+                        pathCoordinates.add(pointToLocation(pathPoint, startX, y, startZ));
+                    }
+
+                    pathData.add("path", pathCoordinates);
+
+                    decisionNodeData.add("DECISION " + decisionPoints.indexOf(adjacent), pathData);
+                }
+
+                //add rooms both ways, since rooms do not store adjacent data
+                for(BlockRange2D adjacent : point.connectedRooms.keySet()) {
+                    PointPath path = point.connectedRooms.get(adjacent);
+
+                    JsonObject pathData = new JsonObject();
+
+                    pathData.addProperty("length", path.getPathLength());
+
+                    JsonArray pathCoordinates = new JsonArray();
+
+                    for(Point pathPoint : path.path) {
+                        pathCoordinates.add(pointToLocation(pathPoint, startX, y, startZ));
+                    }
+
+                    pathData.add("path", pathCoordinates);
+
+                    decisionNodeData.add("ROOM " + roomRanges.indexOf(adjacent), pathData);
+
+                    roomGraphData.get(adjacent).add("DECISION " + decisionPoints.indexOf(point), pathData);
+                }
+
+                graphData.add("DECISION " + decisionIndex, decisionNodeData);
+
+                decisionIndex++;
+            }
+
+            for(BlockRange2D roomData : roomGraphData.keySet()) {
+                graphData.add("ROOM " + roomRanges.indexOf(roomData), roomGraphData.get(roomData));
+            }
+
+            decisionData.add("decisionPoints", decisionPointsList);
+            decisionData.add("graphData", graphData);
+
+            writer = new FileWriter(decisionGraph);
+            gson.toJson(decisionData, writer);
+            writer.close();
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        System.out.println("Done!");
+
+        specialFormatPrint(mapping, roomRanges, decisionPoints);
+
+        return missionID;
+    }
+
+    private static String decisionPointToLocation(DecisionPoint point, int startX, int y, int startZ) {
+        return (point.col + startX) + " " + y + " " + (point.row + startZ);
+    }
+
+    private static String pointToLocation(Point point, int startX, int y, int startZ) {
+        return (point.col + startX) + " " + y + " " + (point.row + startZ);
+    }
+
+    /**
+     * Helper method that generically expands in a direction to find collisions between axes
+     * @param currentAxisVisitedPoints List of points that have been visited on the current axis
+     * @param oppositeAxisVisitedPoints List of points visited on the opposite axis
+     * @param collisionPoints List that will be added to to represent axis collisions
+     * @param decisionPoint Starting point
+     * @param deltaRow Direction to move in row
+     * @param deltaCol Direction to move in col
+     * @param mapping Mapping of original map
+     * @param decisionPoints List of all decision points
+     * @param considerDecisionPointDistances To determine whether decision points should be looked at and connected to, or should the algorithm go simply wall to wall
+     */
+    private static void expandDecisionPointLineInDirection(Set<DecisionPoint> currentAxisVisitedPoints, Set<DecisionPoint> oppositeAxisVisitedPoints, Set<DecisionPoint> collisionPoints, DecisionPoint decisionPoint, int deltaRow, int deltaCol, String[][] mapping, List<DecisionPoint> decisionPoints, boolean considerDecisionPointDistances) {
+        DecisionPoint currentPoint = new DecisionPoint(decisionPoint.getRow() + deltaRow, decisionPoint.getCol() + deltaCol);
+
+        openListLoop:
+        while(currentPoint.inBounds(mapping)) {
+            currentAxisVisitedPoints.add(currentPoint);
+
+            if(considerDecisionPointDistances) {
+                DecisionPoint adjacentNegative = new DecisionPoint(currentPoint.row + deltaCol, currentPoint.col + deltaRow);
+                DecisionPoint adjacentPositive = new DecisionPoint(currentPoint.row - deltaCol, currentPoint.col - deltaRow);
+                //check for any decision currentPoints first
+                for (DecisionPoint loopDecisionPoint : decisionPoints) {
+                    if (currentPoint.equals(loopDecisionPoint) || adjacentNegative.equals(loopDecisionPoint) || adjacentPositive.equals(loopDecisionPoint)) {
+                        PointPath path = calculatePathBetweenNodes(mapping, new Point(decisionPoint.getRow(), decisionPoint.getCol()), new Point(loopDecisionPoint.getRow(), loopDecisionPoint.getCol()));
+                        decisionPoint.connectedDecisionPoints.put(loopDecisionPoint, path);
+                        loopDecisionPoint.connectedDecisionPoints.put(decisionPoint, path);
+                        break openListLoop;
+                    }
+                }
+            }
+
+            //finally, check for a wall
+            if(!currentPoint.get(mapping).isEmpty()) {
+                break;
+            }
+
+            if(!considerDecisionPointDistances) {
+                //check if collision with opposite axis
+                if (oppositeAxisVisitedPoints.contains(currentPoint) && !decisionPoints.contains(currentPoint)) {
+                    //make sure this new collision point is not too close to any other decision point
+
+                    boolean shouldAdd = true;
+                    for (DecisionPoint loopDecisionPoint : decisionPoints) {
+                        if (Math.abs(loopDecisionPoint.col - currentPoint.col) <= 1) {
+                            if (Math.abs(loopDecisionPoint.row - currentPoint.row) <= 1) {
+                                shouldAdd = false;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (shouldAdd) {
+                        for (DecisionPoint loopDecisionPoint : collisionPoints) {
+                            if (Math.abs(loopDecisionPoint.col - currentPoint.col) <= 1) {
+                                if (Math.abs(loopDecisionPoint.row - currentPoint.row) <= 1) {
+                                    shouldAdd = false;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (shouldAdd) {
+                        collisionPoints.add(currentPoint);
+                    }
+                }
+            }
+
+            //now, add to openList
+            currentPoint = new DecisionPoint(currentPoint.row + deltaRow, currentPoint.col + deltaCol);
+        }
+    }
+
+    private static void addPotentialDecisionPoint(List<DecisionPoint> decisionPoints, BlockRange2D room, Point roomPoint, Point doorPoint, Set<Point> hallwayPoints, String[][] mapping) {
+        if(doorPoint.inBounds(mapping) && doorPoint.get(mapping).equals("D")) {
+            DecisionPoint decisionPoint = generateNewDecisionPoint(hallwayPoints, mapping, roomPoint, doorPoint);
+
+            if(decisionPoint != null) {
+                if (decisionPoints.contains(decisionPoint)) {
+                    decisionPoints.get(decisionPoints.indexOf(decisionPoint)).connectedRooms.put(room, getPathLengthFromDecisionPointToRoom(mapping, decisionPoint, room));
+                } else {
+                    decisionPoint.connectedRooms.put(room, getPathLengthFromDecisionPointToRoom(mapping, decisionPoint, room));
+                    decisionPoints.add(decisionPoint);
+                }
+            }
+        }
+    }
+
+    //NOTICE: there is a slight accuracy drop because we round to integer instead of double, but this should be almost correct and a good enough estimate for the map
+    private static PointPath getPathLengthFromDecisionPointToRoom(String[][] mapping, DecisionPoint decisionPoint, BlockRange2D room) {
+        return calculatePathBetweenNodes(mapping, new Point(decisionPoint.getRow(), decisionPoint.getCol()), new Point((room.getRangeX()[1] + room.getRangeX()[0]) / 2, (room.getRangeZ()[1] + room.getRangeZ()[0]) / 2));
+    }
+
+    //this uses the decision point class, but this doesn't mean we are looking between decision points.
+    private static PointPath calculatePathBetweenNodes(String[][] mapping, Point begin, Point end) {
+        HashMap<Point, Double> totalLocationCosts = new HashMap<>();
+        HashMap<Point, Integer> numberOfBlocksFromBegin = new HashMap<>();
+
+        PriorityQueue<Point> openList = new PriorityQueue<>(new Comparator<Point>() {
+            @Override
+            public int compare(Point o1, Point o2) {
+                return Double.compare(totalLocationCosts.get(o1), totalLocationCosts.get(o2));
+            }
+        });
+
+        HashMap<Point, Point> parents = new HashMap<>();
+
+        openList.add(begin);
+        parents.put(begin, null);
+        totalLocationCosts.put(begin, getManhattanDistance(begin, end));
+        numberOfBlocksFromBegin.put(begin, 0);
+
+        while(!openList.isEmpty()) {
+            Point currentPoint = openList.poll();
+
+            if(end.equals(currentPoint)) {
+                break;
+            }
+
+            for(int i = 0; i < 4; i++) {
+                for(int dy = -1; dy <= 1; dy++) {
+                    Point adjacentLoc = currentPoint.inDirection(new int[] {DIRECTION_DELTAS[i * 2], DIRECTION_DELTAS[i * 2 + 1]});
+
+                    if(parents.containsKey(adjacentLoc)) {
+                        continue;
+                    }
+
+                    if(!adjacentLoc.inBounds(mapping)) {
+                        continue;
+                    }
+
+                    if(!adjacentLoc.get(mapping).equals("D") && !adjacentLoc.get(mapping).isEmpty()) {
+                        continue;
+                    }
+
+                    int adjacentBlocksFromStart = numberOfBlocksFromBegin.get(currentPoint) + 1;
+                    numberOfBlocksFromBegin.put(adjacentLoc, adjacentBlocksFromStart);
+                    totalLocationCosts.put(adjacentLoc, adjacentBlocksFromStart + getManhattanDistance(adjacentLoc, end));
+                    openList.add(adjacentLoc);
+                    parents.put(adjacentLoc, currentPoint);
+                }
+            }
+        }
+
+        LinkedList<Point> path = new LinkedList<>();
+
+        path.add(end);
+
+        double distance = 0;
+
+        Point nextLoc = end;
+        while((nextLoc = parents.get(nextLoc)) != null) {
+            path.addFirst(nextLoc);
+            distance++;
+        }
+
+        distance = Math.round(distance * 100) / 100d;
+
+        return new PointPath(path, distance);
+    }
+
+    private static double getManhattanDistance(Point begin, Point end) {
+        return Math.abs(begin.row - end.row) + Math.abs(begin.col - end.col);
+    }
+
+    /**
+     * Attempts to generate a decision point if the adjacentPoint is facing the hallway, returning the middle of the hallway. Otherwise, returns null.
+     * @param hallwayPoints
+     * @param mapping
+     * @param point
+     * @param adjacentPoint
+     * @return
+     */
+    private static DecisionPoint generateNewDecisionPoint(Set<Point> hallwayPoints, String[][] mapping, Point point, Point adjacentPoint) {
+        int[] direction = point.getDelta(adjacentPoint);
+
+        Point hallwayCandidate = adjacentPoint.inDirection(direction);
+        if(hallwayPoints.contains(hallwayCandidate)) {
+            int hallwayLength = 0;
+            Point currentPoint = hallwayCandidate;
+            while(currentPoint.inBounds(mapping) && currentPoint.get(mapping).isEmpty()) {
+                hallwayLength++;
+                currentPoint = currentPoint.inDirection(direction);
+            }
+
+            if(direction[0] == 0) {
+                return new DecisionPoint(point.row, hallwayCandidate.col + ((hallwayLength - 1) / 2d * direction[1]));
+            } else {
+                return new DecisionPoint(((((hallwayCandidate.row + 0.5d) * 2d) + ((hallwayLength - 1) * direction[0])) / 2d), point.col);
+            }
         }
 
         return null;
+    }
+
+    private static EnclosedSpace getEnclosedSpace(Point start, String[][] mapping) {
+        return getEnclosedSpace(start, mapping, null);
+    }
+
+    private static EnclosedSpace getEnclosedSpace(Point start, String[][] mapping, Set<Point> additionalWalls) {
+        Set<Point> enclosedSpace = new HashSet<>();
+        LinkedList<Point> openList = new LinkedList<>();
+        int adjacentDoorsCount = 0;
+
+        openList.add(start);
+        enclosedSpace.add(start);
+
+        while(!openList.isEmpty()) {
+            Point next = openList.poll();
+
+            for(int i = 0; i < 4; i++) {
+                Point delta = new Point(next.row + DIRECTION_DELTAS[i * 2], next.col + DIRECTION_DELTAS[i * 2 + 1]);
+
+                if(enclosedSpace.contains(delta)) {
+                    continue;
+                }
+
+                if(additionalWalls != null && additionalWalls.contains(delta)) {
+                    continue;
+                }
+
+                if(delta.inBounds(mapping)) {
+                    if(delta.get(mapping).isEmpty()) {
+                        enclosedSpace.add(delta);
+                        openList.add(delta);
+                    } else {
+                        switch(delta.get(mapping)) {
+                            case "D":
+                                adjacentDoorsCount++;
+                                break;
+                        }
+                    }
+                }
+            }
+        }
+
+        return new EnclosedSpace(enclosedSpace, adjacentDoorsCount);
+    }
+
+    private static void formatPrint(String[][] mapping) {
+        System.out.print("    ");
+
+        for(int col = 0; col < mapping[0].length; col++) {
+            System.out.print(String.format("%02d", col) + " ");
+        }
+
+        System.out.println();
+
+        int rowIndex = 0;
+        for(String[] row : mapping) {
+            System.out.print(String.format("%02d", rowIndex) + " ");
+            System.out.print("[");
+            for(int i = 0; i < row.length; i++) {
+                if(row[i].isEmpty()) {
+                    System.out.print(" ");
+                } else {
+                    System.out.print(row[i]);
+                }
+
+                if(i < row.length - 1) {
+                    System.out.print(", ");
+                }
+            }
+            System.out.println("]");
+            rowIndex++;
+        }
+    }
+
+    private static void specialFormatPrint(String[][] mapping, List<BlockRange2D> roomRanges, List<DecisionPoint> decisionPoints) {
+        System.out.println();
+
+        char[] symbols = new char[] {'~', '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '-', '_', '+', '=', '.', ',', '?', '/', '\\', '<', '>', '|'};
+
+        System.out.print("    ");
+
+        for(int col = 0; col < mapping[0].length; col++) {
+            System.out.print(String.format("%02d", col) + " ");
+        }
+
+        System.out.println();
+
+        int rowIndex = 0;
+        for(String[] row : mapping) {
+            System.out.print(String.format("%02d", rowIndex) + " ");
+            System.out.print("[");
+            for(int i = 0; i < row.length; i++) {
+                boolean found = false;
+                int index = 0;
+                for(BlockRange2D range : roomRanges) {
+                    if(range.isInRange(rowIndex, i)) {
+                        if(true) {
+                            String ind = String.valueOf(index);
+                            System.out.print(ind.charAt(ind.length() - 1));
+                        } else {
+                            System.out.print(symbols[index % symbols.length]);
+                        }
+                        found = true;
+                        break;
+                    }
+                    index++;
+                }
+
+                for(DecisionPoint point : decisionPoints) {
+                    if(point.getRow() == rowIndex && point.getCol() == i) {
+//                        System.out.print("X");
+                        System.out.print(point.connectedRooms.size());
+                        found = true;
+                        break;
+                    }
+                }
+
+                if(!found) {
+                    if (row[i].isEmpty()) {
+//                    index = 0;
+//                    for(Set<Point> points : enclosedSpaces) {
+//                        Point point = new Point(rowIndex, i);
+//                        if(points.contains(point)) {
+//                            System.out.print(symbols[index % symbols.length]);
+//                            found = true;
+//                            break;
+//                        }
+//                        index++;
+//                    }
+
+                        if (!found) {
+                            System.out.print(" ");
+                        }
+                    } else {
+                        System.out.print(row[i]);
+                    }
+                }
+
+                if(i < row.length - 1) {
+                    System.out.print(", ");
+                }
+            }
+            System.out.println("]");
+
+            rowIndex++;
+        }
     }
 
     private static String[] createRow(int length, String fill) {

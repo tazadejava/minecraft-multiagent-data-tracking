@@ -41,12 +41,13 @@ public class MissionRoom {
 
         bounds = new BlockRange2D(data.getAsJsonObject("bounds"));
 
-        JsonArray blocks = data.getAsJsonArray("blocks");
-
-        visibleRoomBlocks = new HashSet<>();
-        for(JsonElement element : blocks) {
-            String[] loc = element.getAsString().split(" ");
-            visibleRoomBlocks.add(new Location(world, Integer.parseInt(loc[0]), Integer.parseInt(loc[1]), Integer.parseInt(loc[2])));
+        if(data.has("blocks")) {
+            JsonArray blocks = data.getAsJsonArray("blocks");
+            visibleRoomBlocks = new HashSet<>();
+            for (JsonElement element : blocks) {
+                String[] loc = element.getAsString().split(" ");
+                visibleRoomBlocks.add(new Location(world, Integer.parseInt(loc[0]), Integer.parseInt(loc[1]), Integer.parseInt(loc[2])));
+            }
         }
     }
 
@@ -55,13 +56,13 @@ public class MissionRoom {
 
         roomData.add("bounds", bounds.save());
 
-        JsonArray blocksArray = new JsonArray();
+//        JsonArray blocksArray = new JsonArray();
 
-        for(Location loc : visibleRoomBlocks) {
-            blocksArray.add(loc.getBlockX() + " " + loc.getBlockY() + " " + loc.getBlockZ());
-        }
+//        for(Location loc : visibleRoomBlocks) {
+//            blocksArray.add(loc.getBlockX() + " " + loc.getBlockY() + " " + loc.getBlockZ());
+//        }
 
-        roomData.add("blocks", blocksArray);
+//        roomData.add("blocks", blocksArray);
 
         mainObject.add(roomName, roomData);
     }

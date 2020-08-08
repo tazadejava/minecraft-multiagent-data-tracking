@@ -10,6 +10,13 @@ public class BlockRange2D {
 
     private Block startBlock, endBlock;
 
+    public BlockRange2D(int startX, int endX, int startZ, int endZ) {
+        this.startX = startX;
+        this.endX = endX;
+        this.startZ = startZ;
+        this.endZ = endZ;
+    }
+
     public BlockRange2D() {
 
     }
@@ -116,5 +123,9 @@ public class BlockRange2D {
     public boolean isInRange(Location location) {
         return (location.getBlockX() >= startX && location.getBlockX() <= endX)
                 && (location.getBlockZ() >= startZ && location.getBlockZ() <= endZ);
+    }
+
+    public boolean isInRange(int x, int z) {
+        return x >= startX && x <= endX && z >= startZ && z <= endZ;
     }
 }

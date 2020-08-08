@@ -337,6 +337,43 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                         }
                     }
                     break;
+                case "import":
+                    if(!(commandSender instanceof Player)) {
+                        commandSender.sendMessage(ChatColor.RED + "You must be a player to execute this command.");
+                        break;
+                    }
+                    if(args.length < 6) {
+                        commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission import <mission name> <csv filename not including .csv> <start X> <start Y> <start Z>");
+                        commandSender.sendMessage(ChatColor.RED + "Make sure you are standing where the mission starts as well!");
+                        break;
+                    }
+
+                    if(missionManager.doesMissionExist(args[1])) {
+                        commandSender.sendMessage(ChatColor.RED + "A mission with that name already exists!");
+                        break;
+                    }
+
+                    int x = 0, y = 0, z = 0;
+
+                    try {
+                        x = Integer.parseInt(args[3]);
+                        y = Integer.parseInt(args[4]);
+                        z = Integer.parseInt(args[5]);
+                    } catch(NumberFormatException ex) {
+                        commandSender.sendMessage(ChatColor.RED + "That isn't a valid integer xyz coordinate!");
+                        break;
+                    }
+
+                    File csvFile = new File(plugin.getDataFolder().getAbsolutePath() + "/" + args[2] + ".csv");
+
+                    if(!csvFile.exists()) {
+                        commandSender.sendMessage(ChatColor.RED + "The csv file cannot be found!");
+                        break;
+                    }
+
+                    missionManager.createMission(argsOriginal[1], ((Player) commandSender).getLocation(), csvFile, x, y, z);
+                    commandSender.sendMessage("The mission named " + argsOriginal[1] + " has been created, and the graph has been automatically generated from the CSV file!");
+                    break;
                 case "create":
                     if(args.length < 2) {
                         commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission create <mission name>");
@@ -930,7 +967,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
         switch(args.length) {
             case 1:
                 List<String> completions = new ArrayList<>();
-                StringUtil.copyPartialMatches(args[0], Arrays.asList("create", "start", "abort", "list", "set", "getitem", "info", "room", "add"), completions);
+                StringUtil.copyPartialMatches(args[0], Arrays.asList("create", "start", "abort", "list", "set", "import", "getitem", "info", "room", "add"), completions);
                 Collections.sort(completions);
 
                 return completions;
