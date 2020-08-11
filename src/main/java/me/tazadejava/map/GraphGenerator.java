@@ -492,6 +492,8 @@ public class GraphGenerator {
 
         List<DecisionPoint> decisionPoints = new ArrayList<>();
 
+        HashMap<BlockRange2D, Set<BlockRange2D>> connectedRooms = new HashMap<>();
+
         for(BlockRange2D roomRange : roomRanges) {
             //loop through perimeter of room, looking for doors to append decision points to
             for(int row = roomRange.startX; row <= roomRange.endX; row++) {
@@ -499,11 +501,13 @@ public class GraphGenerator {
                 Point roomPoint = new Point(row, roomRange.startZ);
                 Point doorPoint = new Point(row, roomRange.startZ - 1);
                 addPotentialDecisionPoint(decisionPoints, roomRange, roomPoint, doorPoint, hallwayPoints, mapping);
+                addPotentialRoomToRoomEdge(roomRanges, roomRange, roomPoint, doorPoint, mapping, connectedRooms);
 
                 //right
                 roomPoint = new Point(row, roomRange.endZ);
                 doorPoint = new Point(row, roomRange.endZ + 1);
                 addPotentialDecisionPoint(decisionPoints, roomRange, roomPoint, doorPoint, hallwayPoints, mapping);
+                addPotentialRoomToRoomEdge(roomRanges, roomRange, roomPoint, doorPoint, mapping, connectedRooms);
             }
 
             for(int col = roomRange.startZ; col <= roomRange.endZ; col++) {
@@ -511,11 +515,13 @@ public class GraphGenerator {
                 Point roomPoint = new Point(roomRange.startX, col);
                 Point doorPoint = new Point(roomRange.startX - 1, col);
                 addPotentialDecisionPoint(decisionPoints, roomRange, roomPoint, doorPoint, hallwayPoints, mapping);
+                addPotentialRoomToRoomEdge(roomRanges, roomRange, roomPoint, doorPoint, mapping, connectedRooms);
 
                 //down
                 roomPoint = new Point(roomRange.endX, col);
                 doorPoint = new Point(roomRange.endX + 1, col);
                 addPotentialDecisionPoint(decisionPoints, roomRange, roomPoint, doorPoint, hallwayPoints, mapping);
+                addPotentialRoomToRoomEdge(roomRanges, roomRange, roomPoint, doorPoint, mapping, connectedRooms);
             }
         }
 
@@ -543,7 +549,7 @@ public class GraphGenerator {
         }
 
         //debug via input
-        debugPrintConnections(decisionPoints, roomRanges);
+        debugPrintConnections(decisionPoints, roomRanges, null);
 
         System.out.println("    Now, connecting all decision points!");
 
@@ -554,16 +560,11 @@ public class GraphGenerator {
         }
 
         for(DecisionPoint decisionPoint : decisionPoints) {
-            System.out.println("---------DECISION POINT " + decisionPoints.indexOf(decisionPoint));
             //expand row (left to right)
-            System.out.println("LEFT");
             expandDecisionPointLineInDirection(colExpansionPoints, rowExpansionPoints, collisionPoints, decisionPoint, 0, -1, mapping, decisionPoints, true, adjacentDecisionPoints);
-            System.out.println("RIGHT");
             expandDecisionPointLineInDirection(colExpansionPoints, rowExpansionPoints, collisionPoints, decisionPoint, 0, 1, mapping, decisionPoints, true, adjacentDecisionPoints);
             //expand col
-            System.out.println("UP");
             expandDecisionPointLineInDirection(rowExpansionPoints, colExpansionPoints, collisionPoints, decisionPoint, -1, 0, mapping, decisionPoints, true, adjacentDecisionPoints);
-            System.out.println("DOWN");
             expandDecisionPointLineInDirection(rowExpansionPoints, colExpansionPoints, collisionPoints, decisionPoint, 1, 0, mapping, decisionPoints, true, adjacentDecisionPoints);
         }
 
@@ -659,19 +660,7 @@ public class GraphGenerator {
                 for(BlockRange2D adjacent : point.connectedRooms.keySet()) {
                     PointPath path = point.connectedRooms.get(adjacent);
 
-                    JsonObject pathData = new JsonObject();
-
-                    pathData.addProperty("length", path.getPathLength());
-
-                    JsonArray pathCoordinates = new JsonArray();
-
-                    for(Point pathPoint : path.path) {
-                        pathCoordinates.add(pointToLocation(pathPoint, startX, y, startZ));
-                    }
-
-                    pathData.add("path", pathCoordinates);
-
-                    decisionNodeData.add("ROOM " + roomRanges.indexOf(adjacent), pathData);
+                    JsonObject pathData = pathToJsonObject(path, startX, y, startZ);
 
                     roomGraphData.get(adjacent).add("DECISION " + decisionPoints.indexOf(point), pathData);
                 }
@@ -679,6 +668,17 @@ public class GraphGenerator {
                 graphData.add("DECISION " + decisionIndex, decisionNodeData);
 
                 decisionIndex++;
+            }
+
+            //create the room edges between themselves
+            for(BlockRange2D room : connectedRooms.keySet()) {
+                for(BlockRange2D connectedRoom : connectedRooms.get(room)) {
+                    JsonObject pathData = pathToJsonObject(calculatePathBetweenNodes(mapping,
+                            new Point((room.getRangeX()[1] + room.getRangeX()[0]) / 2, (room.getRangeZ()[1] + room.getRangeZ()[0]) / 2),
+                            new Point((connectedRoom.getRangeX()[1] + connectedRoom.getRangeX()[0]) / 2, (connectedRoom.getRangeZ()[1] + connectedRoom.getRangeZ()[0]) / 2)), startX, y, startZ);
+
+                    roomGraphData.get(room).add("ROOM " + roomRanges.indexOf(connectedRoom), pathData);
+                }
             }
 
             for(BlockRange2D roomData : roomGraphData.keySet()) {
@@ -692,21 +692,36 @@ public class GraphGenerator {
             gson.toJson(decisionData, writer);
             writer.close();
 
+            System.out.println("Done!");
+
+            specialFormatPrint(mapping, roomRanges, decisionPoints);
+
+            //debug via input
+            debugPrintConnections(decisionPoints, roomRanges, roomGraphData);
         } catch (IOException e) {
             e.printStackTrace();
         }
 
-        System.out.println("Done!");
-
-        specialFormatPrint(mapping, roomRanges, decisionPoints);
-
-        //debug via input
-        debugPrintConnections(decisionPoints, roomRanges);
-
         return missionID;
     }
 
-    private static void debugPrintConnections(List<DecisionPoint> decisionPoints, List<BlockRange2D> roomRanges) {
+    private static JsonObject pathToJsonObject(PointPath path, int startX, int y, int startZ) {
+        JsonObject pathData = new JsonObject();
+
+        pathData.addProperty("length", path.getPathLength());
+
+        JsonArray pathCoordinates = new JsonArray();
+
+        for(Point pathPoint : path.path) {
+            pathCoordinates.add(pointToLocation(pathPoint, startX, y, startZ));
+        }
+
+        pathData.add("path", pathCoordinates);
+
+        return pathData;
+    }
+
+    private static void debugPrintConnections(List<DecisionPoint> decisionPoints, List<BlockRange2D> roomRanges, HashMap<BlockRange2D, JsonObject> roomGraphData) {
         for(DecisionPoint point : decisionPoints) {
             System.out.println("DECISION " + decisionPoints.indexOf(point) + " IS CONNECTED TO " + point.connectedDecisionPoints.size() + " OTHER DECISION POINT(S) AND " + point.connectedRooms.size() + " ROOM(S)");
 
@@ -721,6 +736,18 @@ public class GraphGenerator {
             }
 
             System.out.println();
+        }
+
+        if(roomGraphData != null) {
+            for (BlockRange2D range : roomRanges) {
+                System.out.println("ROOM " + roomRanges.indexOf(range));
+
+                for(Map.Entry<BlockRange2D, JsonObject> entry : roomGraphData.entrySet()) {
+                    System.out.println("\t" + entry.getValue());
+                }
+
+                System.out.println();
+            }
         }
     }
 
@@ -787,7 +814,6 @@ public class GraphGenerator {
                 for (DecisionPoint loopDecisionPoint : decisionPoints) {
                     Point loopDecisionPointRounded = loopDecisionPoint.toPoint();
                     if (currentPointRounded.equals(loopDecisionPointRounded) || adjacentNegative.equals(loopDecisionPointRounded) || adjacentPositive.equals(loopDecisionPointRounded)) {
-                        System.out.println("FOUND CONNECTION WITH " + decisionPoints.indexOf(loopDecisionPoint));
                         PointPath path = calculatePathBetweenNodes(mapping, new Point(decisionPoint.getRow(), decisionPoint.getCol()), new Point(loopDecisionPoint.getRow(), loopDecisionPoint.getCol()));
                         decisionPoint.connectedDecisionPoints.put(loopDecisionPoint, path);
                         loopDecisionPoint.connectedDecisionPoints.put(decisionPoint, path);
@@ -802,7 +828,6 @@ public class GraphGenerator {
 
             //finally, check for a wall
             if(!currentPoint.get(mapping).isEmpty()) {
-                System.out.println("HIT THE WALL");
                 break;
             }
 
@@ -840,6 +865,24 @@ public class GraphGenerator {
 
             //now, add to openList
             currentPoint = new DecisionPoint(currentPoint.row + deltaRow, currentPoint.col + deltaCol);
+        }
+    }
+
+    private static void addPotentialRoomToRoomEdge(List<BlockRange2D> rooms, BlockRange2D room, Point roomPoint, Point doorPoint, String[][] mapping, HashMap<BlockRange2D, Set<BlockRange2D>> connectedRooms) {
+        if(doorPoint.inBounds(mapping) && doorPoint.get(mapping).equals("D")) {
+            Point outerPoint = doorPoint.inDirection(roomPoint.getDelta(doorPoint));
+
+            for(BlockRange2D roomBounds : rooms) {
+                if(roomBounds != room) {
+                    if(roomBounds.isInRange(outerPoint.row, outerPoint.col)) {
+                        connectedRooms.putIfAbsent(room, new HashSet<>());
+                        connectedRooms.putIfAbsent(roomBounds, new HashSet<>());
+
+                        connectedRooms.get(room).add(roomBounds);
+                        connectedRooms.get(roomBounds).add(room);
+                    }
+                }
+            }
         }
     }
 

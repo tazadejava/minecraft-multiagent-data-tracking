@@ -382,8 +382,12 @@ public class PlayerAnalyzer {
                             }
 
                             if(doesEdgeExist) {
-                                //quality check; make sure the path is not simply the currently shortest path
+                                if(mission.getMissionGraph().isEdgeProtected(MissionGraph.MissionVertexType.ROOM, originalRoom.getRoomName(), MissionGraph.MissionVertexType.ROOM, compareRoom.getRoomName())) {
+                                    //skip if already checked
+                                    continue;
+                                }
 
+                                //quality check; make sure the path is not simply the currently shortest path
                                 MissionGraph.LocationPath newPath = mission.getMissionGraph().defineEdge(MissionGraph.MissionVertexType.ROOM, originalRoom.getRoomName(), MissionGraph.MissionVertexType.ROOM, compareRoom.getRoomName());
                                 mission.getMissionGraph().protectEdge(MissionGraph.MissionVertexType.ROOM, originalRoom.getRoomName(), MissionGraph.MissionVertexType.ROOM, compareRoom.getRoomName());
 
@@ -400,13 +404,13 @@ public class PlayerAnalyzer {
 
                                 manhattanDistance = originalVertex.location.distance(compareVertex.location);
 
-                                if(newPath.getPathLength() < manhattanDistance * 1.5d) {
+                                if(newPath.getPathLength() < manhattanDistance * 2d) {
                                     Bukkit.broadcastMessage("" + ChatColor.GOLD + ChatColor.BOLD + "FOUND EDGE BETWEEN ROOMS " + originalRoom.getRoomName() + " AND " + compareRoom.getRoomName() + " WITH LENGTH " + mission.getMissionGraph().getShortestPathUsingEdges(MissionGraph.MissionVertexType.ROOM, originalRoom.getRoomName(), MissionGraph.MissionVertexType.ROOM, compareRoom.getRoomName()).getPathLength());
 
                                     //recalculate best path
                                     shouldUpdatePlayerGraph = true;
                                 } else {
-                                    Bukkit.broadcastMessage("" + ChatColor.GRAY + "Almost found an edge between " + originalRoom.getRoomName() + " AND " + compareRoom.getRoomName() + " WITH LENGTH " + mission.getMissionGraph().getShortestPathUsingEdges(MissionGraph.MissionVertexType.ROOM, originalRoom.getRoomName(), MissionGraph.MissionVertexType.ROOM, compareRoom.getRoomName()).getPathLength());
+                                    Bukkit.broadcastMessage("" + ChatColor.GRAY + "Almost found an edge between " + originalRoom.getRoomName() + " AND " + compareRoom.getRoomName() + " WITH LENGTH " + mission.getMissionGraph().getShortestPathUsingEdges(MissionGraph.MissionVertexType.ROOM, originalRoom.getRoomName(), MissionGraph.MissionVertexType.ROOM, compareRoom.getRoomName()).getPathLength() + " " + (manhattanDistance * 2d));
                                     mission.getMissionGraph().deleteEdge(MissionGraph.MissionVertexType.ROOM, originalRoom.getRoomName(), MissionGraph.MissionVertexType.ROOM, compareRoom.getRoomName());
                                 }
                             }

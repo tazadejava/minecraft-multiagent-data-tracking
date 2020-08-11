@@ -3,6 +3,7 @@ package me.tazadejava.mission;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import me.tazadejava.actiontracker.Utils;
 import me.tazadejava.blockranges.BlockRange2D;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -594,24 +595,50 @@ public class MissionGraph {
             return true;
         }
 
-//        verifiedEdges.putIfAbsent(begin, new HashSet<>());
-//        verifiedEdges.get(begin).add(end);
-//
-//        verifiedEdges.putIfAbsent(end, new HashSet<>());
-//        verifiedEdges.get(end).add(begin);
+        //represents blocks that would be otherwise falsely identified as a eye-level blockage when they are indeed passable
+        //TODO: this is by no means a comprehensive list...
+        Set<Material> passableMaterials = new HashSet<>();
+        passableMaterials.add(Material.LEVER);
+        passableMaterials.add(Material.OAK_WALL_SIGN);
+        passableMaterials.add(Material.LIGHT_WEIGHTED_PRESSURE_PLATE);
+        passableMaterials.add(Material.HEAVY_WEIGHTED_PRESSURE_PLATE);
 
         LinkedList<Location> edgePath = edgePaths.get(begin).get(end);
 
         for(Location loc : edgePath) {
-            //ground level match
+            //this algorithm will check for air blocks above the location. this requires access to the world and is not a good way to do it separate from a plugin implementation
+            //in the future: possible fix could be to track which blocks were seen that were AIR as well, then track those too
+
+            //ground level and up blockage
             if(visibleBlocks.contains(loc.getBlock())) {
                 if(visibleBlocks.contains(loc.getBlock().getRelative(0, 1, 0))) {
-                    return false;
+                    MissionRoom currentRoom = null;
+                    for(MissionRoom room : mission.getRooms()) {
+                        if(room.getBounds().isInRange(loc)) {
+                            currentRoom = room;
+                            break;
+                        }
+                    }
+
+                    if(currentRoom == null) {
+                        System.out.println("FAIL HALLWAY GROUND " + Utils.getFormattedLocation(loc) + " " + loc.getBlock().getType());
+                        return false;
+                    } else {
+                        //if within a room, be a little more lenient on the block checking, since there are multiple ways around a specific area
+                        if(visibleBlocks.contains(loc.getBlock().getRelative(0, 2, 0))) {
+                            System.out.println("FAIL ROOM 2 above " + Utils.getFormattedLocation(loc.getBlock().getRelative(0, 2, 0).getLocation()) + " " + loc.getBlock().getRelative(0, 2, 0).getType());
+                            return false;
+                        }
+                    }
                 }
-            }
-            //eye level match
-            if(visibleBlocks.contains(loc.getBlock().getRelative(0, 1, 0))) {
-                return false;
+            } else {
+                //eye level blockage
+                if (visibleBlocks.contains(loc.getBlock().getRelative(0, 1, 0))) {
+                    if(!passableMaterials.contains(loc.getBlock().getRelative(0, 1, 0).getType())) {
+                        System.out.println("FAIL EYE LEVEL " + Utils.getFormattedLocation(loc) + " " + loc.getBlock().getType());
+                        return false;
+                    }
+                }
             }
         }
 
@@ -634,6 +661,13 @@ public class MissionGraph {
 
         verifiedEdges.get(begin).add(end);
         verifiedEdges.get(end).add(begin);
+    }
+
+    public boolean isEdgeProtected(MissionVertexType type1, String name1, MissionVertexType type2, String name2) {
+        MissionVertex begin = getVertex(type1, name1);
+        MissionVertex end = getVertex(type2, name2);
+
+        return verifiedEdges.containsKey(begin) && verifiedEdges.get(begin).contains(end);
     }
 
     /**
