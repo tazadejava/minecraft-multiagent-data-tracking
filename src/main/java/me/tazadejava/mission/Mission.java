@@ -8,6 +8,11 @@ import me.tazadejava.actiontracker.Utils;
 import org.bukkit.Location;
 
 import java.io.*;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.time.LocalDateTime;
 import java.util.*;
 
@@ -112,6 +117,29 @@ public class Mission {
 
         } catch (FileNotFoundException e) {
             e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void deleteMissionFolderData(File dataFolder) {
+        try {
+            File missionFolder = new File(dataFolder.getAbsolutePath() + "/" + missionID + "/");
+            if(missionFolder.isDirectory() && missionFolder.exists()) {
+                Files.walkFileTree(missionFolder.toPath(), new SimpleFileVisitor<Path>() {
+                    @Override
+                    public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                        Files.delete(file);
+                        return FileVisitResult.CONTINUE;
+                    }
+
+                    @Override
+                    public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+                        Files.delete(dir);
+                        return FileVisitResult.CONTINUE;
+                    }
+                });
+            }
         } catch (IOException e) {
             e.printStackTrace();
         }

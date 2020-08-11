@@ -1,9 +1,11 @@
 package me.tazadejava.map;
 
 import me.tazadejava.analyzer.PlayerAnalyzer;
+import me.tazadejava.blockranges.BlockRange2D;
 import me.tazadejava.mission.Mission;
 import me.tazadejava.mission.MissionGraph;
 import me.tazadejava.mission.MissionManager;
+import me.tazadejava.mission.MissionRoom;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -14,6 +16,7 @@ import org.bukkit.map.*;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
+import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
@@ -147,44 +150,21 @@ public class DynamicMapRenderer extends MapRenderer {
 
         int iconSize, colorIntensity;
 
-        int size = Math.min(bestPath.size(), 7);
+        int pathSize = Math.min(bestPath.size(), 7);
 
         MissionGraph graph = mission.getMissionGraph();
 
-//        for(int i = size - 1; i > 0; i--) {
-//            MissionGraph.MissionVertex nextVertex = bestPath.get(i);
-//
-//            colorIntensity = (int) (255 * Math.pow(((double) (size - i) / (size - 1)), 2));
-//            iconSize = (int) (5 * ((double) (size - i) / (size - 1))) + 3;
-//
-//            int x = mapOffsetX + (int) (128 * getScale(xRange, nextVertex.location.getBlockX()));
-//            int z = mapOffsetZ + (int) (128 * getScale(zRange, nextVertex.location.getBlockZ()));
-//
-//            //draw edge path
-//            graphics.setColor(new Color(colorIntensity, 0, colorIntensity));
-//            LinkedList<Location> edgePath = graph.getExactPathBetweenEdges(bestPath.get(i).type, bestPath.get(i).name, bestPath.get(i + 1).type, bestPath.get(i + 1).name);
-//            for(Location loc : edgePath) {
-//                int locX = mapOffsetX + (int) (128 * getScale(xRange, loc.getBlockX()));
-//                int locZ = mapOffsetZ + (int) (128 * getScale(zRange, loc.getBlockZ()));
-//                graphics.drawRect(locX, locZ, 1, 1);
-//            }
-//
-//            //draw destination node
-//            graphics.setColor(new Color(0, colorIntensity, 0));
-//            graphics.fillOval(x - (iconSize / 2), z - (iconSize / 2), iconSize, iconSize);
-//        }
-
-        for(int i = 1; i < size; i++) {
+        for(int i = 1; i < pathSize; i++) {
             MissionGraph.MissionVertex nextVertex = bestPath.get(i);
 
-            colorIntensity = (int) (255 * Math.pow(((double) (size - i) / (size)), 2));
-            iconSize = (int) (5 * ((double) (size - i) / (size))) + 3;
+            colorIntensity = (int) (255 * Math.pow(((double) (pathSize - i) / (pathSize)), 2));
+            iconSize = (int) (5 * ((double) (pathSize - i) / (pathSize))) + 3;
 
             int x = mapOffsetX + (int) (128 * getScale(xRange, nextVertex.location.getBlockX()));
             int z = mapOffsetZ + (int) (128 * getScale(zRange, nextVertex.location.getBlockZ()));
 
             //draw edge path
-            if(i < size - 1) {
+            if(i < pathSize - 1) {
                 graphics.setColor(new Color(colorIntensity, 0, colorIntensity));
                 LinkedList<Location> edgePath = graph.getExactPathBetweenEdges(bestPath.get(i).type, bestPath.get(i).name, bestPath.get(i + 1).type, bestPath.get(i + 1).name);
                 for (Location loc : edgePath) {
@@ -197,6 +177,53 @@ public class DynamicMapRenderer extends MapRenderer {
             //draw destination node
             graphics.setColor(new Color(0, colorIntensity, 0));
             graphics.fillOval(x - (iconSize / 2), z - (iconSize / 2), iconSize, iconSize);
+        }
+
+        //draw decision and room circles
+        graphics.setColor(Color.ORANGE);
+        int ovalSize = 6;
+        for(MissionRoom room : mission.getRooms()) {
+            int locX = mapOffsetX + (int) (128 * getScale(xRange, (room.getBounds().getRangeX()[1] + room.getBounds().getRangeX()[0]) / 2));
+            int locZ = mapOffsetZ + (int) (128 * getScale(zRange, (room.getBounds().getRangeZ()[1] + room.getBounds().getRangeZ()[0]) / 2));
+
+            graphics.fillOval(locX - (ovalSize / 2), locZ - (ovalSize / 2), ovalSize, ovalSize);
+        }
+
+        for(String decisionPoint : mission.getDecisionPoints().keySet()) {
+            Location loc = mission.getDecisionPoints().get(decisionPoint);
+
+            int locX = mapOffsetX + (int) (128 * getScale(xRange, loc.getBlockX()));
+            int locZ = mapOffsetZ + (int) (128 * getScale(zRange, loc.getBlockZ()));
+
+            graphics.fillOval(locX - (ovalSize / 2), locZ - (ovalSize / 2), ovalSize, ovalSize);
+        }
+
+        //draw decision and room numbers
+        graphics.setFont(new Font("TimesRoman", Font.BOLD, 10));
+
+        graphics.setColor(Color.RED);
+        FontMetrics font = graphics.getFontMetrics();
+        for(MissionRoom room : mission.getRooms()) {
+            String text = room.getRoomName();
+
+            Rectangle2D textBounds = font.getStringBounds(text, graphics);
+
+            int locX = mapOffsetX + (int) (128 * getScale(xRange, (room.getBounds().getRangeX()[1] + room.getBounds().getRangeX()[0]) / 2));
+            int locZ = mapOffsetZ + (int) (128 * getScale(zRange, (room.getBounds().getRangeZ()[1] + room.getBounds().getRangeZ()[0]) / 2));
+
+            graphics.drawString(text, locX - (int) (textBounds.getWidth() / 2), locZ - (int) (textBounds.getHeight() / 2) + font.getAscent());
+        }
+
+        graphics.setColor(Color.GREEN);
+        for(String decisionPoint : mission.getDecisionPoints().keySet()) {
+            Rectangle2D textBounds = font.getStringBounds(decisionPoint, graphics);
+
+            Location loc = mission.getDecisionPoints().get(decisionPoint);
+
+            int locX = mapOffsetX + (int) (128 * getScale(xRange, loc.getBlockX()));
+            int locZ = mapOffsetZ + (int) (128 * getScale(zRange, loc.getBlockZ()));
+
+            graphics.drawString(decisionPoint, locX - (int) (textBounds.getWidth() / 2), locZ - (int) (textBounds.getHeight() / 2) + font.getAscent());
         }
     }
 

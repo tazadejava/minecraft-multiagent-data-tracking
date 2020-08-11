@@ -143,6 +143,16 @@ public class MissionManager {
         return true;
     }
 
+    public void deleteMission(Mission mission) {
+        if(!missions.containsKey(mission.getMissionName().toLowerCase())) {
+            return;
+        }
+
+        missions.remove(mission.getMissionName().toLowerCase());
+        mission.deleteMissionFolderData(plugin.getDataFolder());
+        saveData();
+    }
+
     public boolean startMission(CommandSender missionInitiator, Mission mission) {
         if(missionInProgress) {
             return false;

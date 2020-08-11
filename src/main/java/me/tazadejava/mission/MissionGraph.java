@@ -508,7 +508,7 @@ public class MissionGraph {
         return getShortestPathUsingEdges(begin, end);
     }
 
-    //unknown of complexity; ensure it is not worse than dijkstra's before continuing
+    //dijkstra's like algorithm, but stops early when it finds the end
     private VertexPath getShortestPathUsingEdges(MissionVertex begin, MissionVertex end) {
         HashMap<MissionVertex, Double> distanceToStart = new HashMap<>();
 
@@ -578,7 +578,7 @@ public class MissionGraph {
     }
 
     /**
-     * verify that the edge exists and is traversable
+     * verify that the edge exists and is traversable. This checks a path from node a to b that was defined in the graphical representation
      * @param type1
      * @param name1
      * @param type2
@@ -619,7 +619,7 @@ public class MissionGraph {
     }
 
     /**
-     * Prevents edge from being removed
+     * Prevents edge from being removed from a failed verification
      * @param type1
      * @param name1
      * @param type2

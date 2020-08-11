@@ -273,10 +273,16 @@ public class PlayerAnalyzer {
 
         HashMap<MissionRoom, Set<Block>> visibleBlocksByRoom = new HashMap<>();
 
+        //take out the walls
         HashMap<BlockRange2D, MissionRoom> adjustedRoomBounds = new HashMap<>();
+
+        //create an adjustment where one more than the walls are included; this allows for fuzzy bound collision between walls
+        HashMap<MissionRoom, BlockRange2D> expandedRoomBounds = new HashMap<>();
 
         for(MissionRoom room : mission.getRooms()) {
             adjustedRoomBounds.put(room.getBounds().clone().expand(-1), room);
+
+            expandedRoomBounds.put(room, room.getBounds().clone().expand(1));
         }
 
         for(Block visibleBlock : visibleBlocks) {
@@ -309,7 +315,10 @@ public class PlayerAnalyzer {
                             continue;
                         }
 
-                        if(originalRoom.getBounds().collidesWith(compareRoom.getBounds())) {
+                        BlockRange2D originalBounds = expandedRoomBounds.get(originalRoom);
+                        BlockRange2D compareBounds = expandedRoomBounds.get(compareRoom);
+
+                        if(originalBounds.collidesWith(compareBounds)) {
                             //then they possibly may have an edge
 //                            Bukkit.broadcastMessage("POSSIBLE EDGE BETWEEN ROOMS " + originalRoom.getRoomName() + " AND " + compareRoom.getRoomName());
 
@@ -322,8 +331,8 @@ public class PlayerAnalyzer {
 
                             Set<Block> boundaryBlock = new HashSet<>();
                             for(Block visibleBlock : visibleBlocks) {
-                                if(originalRoom.getBounds().isInRange(visibleBlock.getLocation())) {
-                                    if (compareRoom.getBounds().isInRange(visibleBlock.getLocation())) {
+                                if(originalBounds.isInRange(visibleBlock.getLocation())) {
+                                    if (compareBounds.isInRange(visibleBlock.getLocation())) {
                                         player.sendBlockChange(visibleBlock.getLocation(), specialMaterial);
 
                                         boundaryBlock.add(visibleBlock);
@@ -373,13 +382,33 @@ public class PlayerAnalyzer {
                             }
 
                             if(doesEdgeExist) {
-                                mission.getMissionGraph().defineEdge(MissionGraph.MissionVertexType.ROOM, originalRoom.getRoomName(), MissionGraph.MissionVertexType.ROOM, compareRoom.getRoomName());
+                                //quality check; make sure the path is not simply the currently shortest path
+
+                                MissionGraph.LocationPath newPath = mission.getMissionGraph().defineEdge(MissionGraph.MissionVertexType.ROOM, originalRoom.getRoomName(), MissionGraph.MissionVertexType.ROOM, compareRoom.getRoomName());
                                 mission.getMissionGraph().protectEdge(MissionGraph.MissionVertexType.ROOM, originalRoom.getRoomName(), MissionGraph.MissionVertexType.ROOM, compareRoom.getRoomName());
 
-                                Bukkit.broadcastMessage("" + ChatColor.GOLD + ChatColor.BOLD + "FOUND EDGE BETWEEN ROOMS " + originalRoom.getRoomName() + " AND " + compareRoom.getRoomName()+ " WITH LENGTH " + mission.getMissionGraph().getShortestPathUsingEdges(MissionGraph.MissionVertexType.ROOM, originalRoom.getRoomName(), MissionGraph.MissionVertexType.ROOM, compareRoom.getRoomName()).getPathLength());
+                                double manhattanDistance = 0;
+                                MissionGraph.MissionVertex originalVertex = null, compareVertex = null;
+                                for(MissionGraph.MissionVertex vertex : mission.getMissionGraph().getRoomVertices()) {
+                                    if(vertex.name.equals(originalRoom.getRoomName())) {
+                                        originalVertex = vertex;
+                                    }
+                                    if(vertex.name.equals(compareRoom.getRoomName())) {
+                                        compareVertex = vertex;
+                                    }
+                                }
 
-                                //recalculate best path
-                                shouldUpdatePlayerGraph = true;
+                                manhattanDistance = originalVertex.location.distance(compareVertex.location);
+
+                                if(newPath.getPathLength() < manhattanDistance * 1.5d) {
+                                    Bukkit.broadcastMessage("" + ChatColor.GOLD + ChatColor.BOLD + "FOUND EDGE BETWEEN ROOMS " + originalRoom.getRoomName() + " AND " + compareRoom.getRoomName() + " WITH LENGTH " + mission.getMissionGraph().getShortestPathUsingEdges(MissionGraph.MissionVertexType.ROOM, originalRoom.getRoomName(), MissionGraph.MissionVertexType.ROOM, compareRoom.getRoomName()).getPathLength());
+
+                                    //recalculate best path
+                                    shouldUpdatePlayerGraph = true;
+                                } else {
+                                    Bukkit.broadcastMessage("" + ChatColor.GRAY + "Almost found an edge between " + originalRoom.getRoomName() + " AND " + compareRoom.getRoomName() + " WITH LENGTH " + mission.getMissionGraph().getShortestPathUsingEdges(MissionGraph.MissionVertexType.ROOM, originalRoom.getRoomName(), MissionGraph.MissionVertexType.ROOM, compareRoom.getRoomName()).getPathLength());
+                                    mission.getMissionGraph().deleteEdge(MissionGraph.MissionVertexType.ROOM, originalRoom.getRoomName(), MissionGraph.MissionVertexType.ROOM, compareRoom.getRoomName());
+                                }
                             }
                         }
                     }
@@ -528,12 +557,13 @@ public class PlayerAnalyzer {
         List<MissionGraph.MissionVertex> roomPath = new ArrayList<>();
 
         List<MissionGraph.MissionVertex> recursivePath = calculateBestLongTermPath(nodeCandidates, roomPaths, playerVertex);
-        visitedVertices.addAll(recursivePath);
-        roomPath.addAll(recursivePath);
-
-        //disable lines above and enable lines below to compare long term and short term paths
-//        visitedVertices.add(playerVertex);
-//        roomPath.add(playerVertex);
+        if(recursivePath == null) {
+            visitedVertices.add(playerVertex);
+            roomPath.add(playerVertex);
+        } else {
+            visitedVertices.addAll(recursivePath);
+            roomPath.addAll(recursivePath);
+        }
 
         //now, iteratively find the next best room from any current room (starting at player's node)
         MissionGraph.MissionVertex currentVertex = roomPath.get(roomPath.size() - 1); //TODO; change to the ending node from above

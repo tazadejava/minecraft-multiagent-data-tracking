@@ -63,6 +63,10 @@ public class GraphGenerator {
             return true;
         }
 
+        public Point toPoint() {
+            return new Point(getRow(), getCol());
+        }
+
         public int getRow() {
             return (int) row;
         }
@@ -298,7 +302,7 @@ public class GraphGenerator {
 
         //based on this definition, then hallways with 1x1 pathways anywhere are separate and should be split into rooms
 
-        System.out.println("Now checking for rooms without doors!");
+        System.out.println("Now checking for rooms without doors (narrow pathways)!");
 
         Set<Point> roomSeparationPoints = new HashSet<>();
 
@@ -350,6 +354,7 @@ public class GraphGenerator {
                 Set<Point> visited = new HashSet<>();
 
                 openList.add(separationPoint);
+                //visited is the separation points (points in the narrow hallway)
                 visited.add(separationPoint);
 
                 while(!openList.isEmpty()) {
@@ -381,7 +386,8 @@ public class GraphGenerator {
 
                     //is the room
                     if(space.adjacentDoorCount <= 4) {
-                        space.enclosedSpace.addAll(visited);
+//                        space.enclosedSpace.addAll(visited); //add to hallway instead of room to make room bounds better
+                        hallwayPoints.addAll(visited);
 
                         hallwayPoints.removeAll(space.enclosedSpace);
                         enclosedSpaces.add(space.enclosedSpace);
@@ -536,15 +542,29 @@ public class GraphGenerator {
             decisionPoints.addAll(collisionPoints);
         }
 
+        //debug via input
+        debugPrintConnections(decisionPoints, roomRanges);
+
         System.out.println("    Now, connecting all decision points!");
 
+        HashMap<DecisionPoint, DecisionPoint[]> adjacentDecisionPoints = new HashMap<>();
+
+        for(DecisionPoint point : decisionPoints) {
+            adjacentDecisionPoints.put(point, new DecisionPoint[4]);
+        }
+
         for(DecisionPoint decisionPoint : decisionPoints) {
+            System.out.println("---------DECISION POINT " + decisionPoints.indexOf(decisionPoint));
             //expand row (left to right)
-            expandDecisionPointLineInDirection(colExpansionPoints, rowExpansionPoints, collisionPoints, decisionPoint, 0, -1, mapping, decisionPoints, true);
-            expandDecisionPointLineInDirection(colExpansionPoints, rowExpansionPoints, collisionPoints, decisionPoint, 0, 1, mapping, decisionPoints, true);
+            System.out.println("LEFT");
+            expandDecisionPointLineInDirection(colExpansionPoints, rowExpansionPoints, collisionPoints, decisionPoint, 0, -1, mapping, decisionPoints, true, adjacentDecisionPoints);
+            System.out.println("RIGHT");
+            expandDecisionPointLineInDirection(colExpansionPoints, rowExpansionPoints, collisionPoints, decisionPoint, 0, 1, mapping, decisionPoints, true, adjacentDecisionPoints);
             //expand col
-            expandDecisionPointLineInDirection(rowExpansionPoints, colExpansionPoints, collisionPoints, decisionPoint, -1, 0, mapping, decisionPoints, true);
-            expandDecisionPointLineInDirection(rowExpansionPoints, colExpansionPoints, collisionPoints, decisionPoint, 1, 0, mapping, decisionPoints, true);
+            System.out.println("UP");
+            expandDecisionPointLineInDirection(rowExpansionPoints, colExpansionPoints, collisionPoints, decisionPoint, -1, 0, mapping, decisionPoints, true, adjacentDecisionPoints);
+            System.out.println("DOWN");
+            expandDecisionPointLineInDirection(rowExpansionPoints, colExpansionPoints, collisionPoints, decisionPoint, 1, 0, mapping, decisionPoints, true, adjacentDecisionPoints);
         }
 
         String missionID = UUID.randomUUID().toString() + "-" + LocalDateTime.now().toString();
@@ -572,6 +592,8 @@ public class GraphGenerator {
             JsonObject roomsData = new JsonObject();
 
             HashMap<BlockRange2D, JsonObject> roomGraphData = new HashMap<>();
+
+            //store boundaries of room
 
             int roomIndex = 0;
             for(BlockRange2D room : roomRanges) {
@@ -614,6 +636,7 @@ public class GraphGenerator {
 
                 JsonObject decisionNodeData = new JsonObject();
 
+                //add the decision paths
                 for(DecisionPoint adjacent : point.connectedDecisionPoints.keySet()) {
                     PointPath path = point.connectedDecisionPoints.get(adjacent);
 
@@ -677,7 +700,28 @@ public class GraphGenerator {
 
         specialFormatPrint(mapping, roomRanges, decisionPoints);
 
+        //debug via input
+        debugPrintConnections(decisionPoints, roomRanges);
+
         return missionID;
+    }
+
+    private static void debugPrintConnections(List<DecisionPoint> decisionPoints, List<BlockRange2D> roomRanges) {
+        for(DecisionPoint point : decisionPoints) {
+            System.out.println("DECISION " + decisionPoints.indexOf(point) + " IS CONNECTED TO " + point.connectedDecisionPoints.size() + " OTHER DECISION POINT(S) AND " + point.connectedRooms.size() + " ROOM(S)");
+
+            for(DecisionPoint adjacent : point.connectedDecisionPoints.keySet()) {
+                PointPath path = point.connectedDecisionPoints.get(adjacent);
+                System.out.println("\tDECISION " + decisionPoints.indexOf(adjacent) + " (LENGTH " + path.pathLength + ")");
+            }
+
+            for(BlockRange2D room : point.connectedRooms.keySet()) {
+                PointPath path = point.connectedRooms.get(room);
+                System.out.println("\tROOM " + roomRanges.indexOf(room) + " (LENGTH " + path.pathLength + ")");
+            }
+
+            System.out.println();
+        }
     }
 
     private static String decisionPointToLocation(DecisionPoint point, int startX, int y, int startZ) {
@@ -686,6 +730,34 @@ public class GraphGenerator {
 
     private static String pointToLocation(Point point, int startX, int y, int startZ) {
         return (point.col + startX) + " " + y + " " + (point.row + startZ);
+    }
+
+    private static void expandDecisionPointLineInDirection(Set<DecisionPoint> currentAxisVisitedPoints, Set<DecisionPoint> oppositeAxisVisitedPoints, Set<DecisionPoint> collisionPoints, DecisionPoint decisionPoint, int deltaRow, int deltaCol, String[][] mapping, List<DecisionPoint> decisionPoints, boolean considerDecisionPointDistances) {
+        expandDecisionPointLineInDirection(currentAxisVisitedPoints, oppositeAxisVisitedPoints, collisionPoints, decisionPoint, deltaRow, deltaCol, mapping, decisionPoints, considerDecisionPointDistances, null);
+    }
+
+    private static int getAdjacentIndex(int deltaRow, int deltaCol) {
+        if(deltaRow < 0) {
+            return 0;
+        } else if(deltaRow > 0) {
+            return 1;
+        } else if (deltaCol < 0) {
+            return 2;
+        } else {
+            return 3;
+        }
+    }
+
+    private static int getOppositeAdjacentIndex(int deltaRow, int deltaCol) {
+        if(deltaRow < 0) {
+            return 1;
+        } else if(deltaRow > 0) {
+            return 0;
+        } else if (deltaCol < 0) {
+            return 3;
+        } else {
+            return 2;
+        }
     }
 
     /**
@@ -700,22 +772,29 @@ public class GraphGenerator {
      * @param decisionPoints List of all decision points
      * @param considerDecisionPointDistances To determine whether decision points should be looked at and connected to, or should the algorithm go simply wall to wall
      */
-    private static void expandDecisionPointLineInDirection(Set<DecisionPoint> currentAxisVisitedPoints, Set<DecisionPoint> oppositeAxisVisitedPoints, Set<DecisionPoint> collisionPoints, DecisionPoint decisionPoint, int deltaRow, int deltaCol, String[][] mapping, List<DecisionPoint> decisionPoints, boolean considerDecisionPointDistances) {
+    private static void expandDecisionPointLineInDirection(Set<DecisionPoint> currentAxisVisitedPoints, Set<DecisionPoint> oppositeAxisVisitedPoints, Set<DecisionPoint> collisionPoints, DecisionPoint decisionPoint, int deltaRow, int deltaCol, String[][] mapping, List<DecisionPoint> decisionPoints, boolean considerDecisionPointDistances, HashMap<DecisionPoint, DecisionPoint[]> adjacentDecisionPoints) {
         DecisionPoint currentPoint = new DecisionPoint(decisionPoint.getRow() + deltaRow, decisionPoint.getCol() + deltaCol);
 
         openListLoop:
         while(currentPoint.inBounds(mapping)) {
             currentAxisVisitedPoints.add(currentPoint);
 
-            if(considerDecisionPointDistances) {
-                DecisionPoint adjacentNegative = new DecisionPoint(currentPoint.row + deltaCol, currentPoint.col + deltaRow);
-                DecisionPoint adjacentPositive = new DecisionPoint(currentPoint.row - deltaCol, currentPoint.col - deltaRow);
+            if(considerDecisionPointDistances && adjacentDecisionPoints.get(decisionPoint)[getAdjacentIndex(deltaRow, deltaCol)] == null) {
+                Point adjacentNegative = new Point(currentPoint.getRow() + deltaCol, currentPoint.getCol() + deltaRow);
+                Point adjacentPositive = new Point(currentPoint.getRow() - deltaCol, currentPoint.getCol() - deltaRow);
                 //check for any decision currentPoints first
+                Point currentPointRounded = currentPoint.toPoint();
                 for (DecisionPoint loopDecisionPoint : decisionPoints) {
-                    if (currentPoint.equals(loopDecisionPoint) || adjacentNegative.equals(loopDecisionPoint) || adjacentPositive.equals(loopDecisionPoint)) {
+                    Point loopDecisionPointRounded = loopDecisionPoint.toPoint();
+                    if (currentPointRounded.equals(loopDecisionPointRounded) || adjacentNegative.equals(loopDecisionPointRounded) || adjacentPositive.equals(loopDecisionPointRounded)) {
+                        System.out.println("FOUND CONNECTION WITH " + decisionPoints.indexOf(loopDecisionPoint));
                         PointPath path = calculatePathBetweenNodes(mapping, new Point(decisionPoint.getRow(), decisionPoint.getCol()), new Point(loopDecisionPoint.getRow(), loopDecisionPoint.getCol()));
                         decisionPoint.connectedDecisionPoints.put(loopDecisionPoint, path);
                         loopDecisionPoint.connectedDecisionPoints.put(decisionPoint, path);
+
+                        adjacentDecisionPoints.get(decisionPoint)[getAdjacentIndex(deltaRow, deltaCol)] = loopDecisionPoint;
+                        adjacentDecisionPoints.get(loopDecisionPoint)[getOppositeAdjacentIndex(deltaRow, deltaCol)] = decisionPoint;
+
                         break openListLoop;
                     }
                 }
@@ -723,6 +802,7 @@ public class GraphGenerator {
 
             //finally, check for a wall
             if(!currentPoint.get(mapping).isEmpty()) {
+                System.out.println("HIT THE WALL");
                 break;
             }
 
@@ -769,9 +849,9 @@ public class GraphGenerator {
 
             if(decisionPoint != null) {
                 if (decisionPoints.contains(decisionPoint)) {
-                    decisionPoints.get(decisionPoints.indexOf(decisionPoint)).connectedRooms.put(room, getPathLengthFromDecisionPointToRoom(mapping, decisionPoint, room));
+                    decisionPoints.get(decisionPoints.indexOf(decisionPoint)).connectedRooms.put(room, getPathFromDecisionPointToRoom(mapping, decisionPoint, room));
                 } else {
-                    decisionPoint.connectedRooms.put(room, getPathLengthFromDecisionPointToRoom(mapping, decisionPoint, room));
+                    decisionPoint.connectedRooms.put(room, getPathFromDecisionPointToRoom(mapping, decisionPoint, room));
                     decisionPoints.add(decisionPoint);
                 }
             }
@@ -779,7 +859,7 @@ public class GraphGenerator {
     }
 
     //NOTICE: there is a slight accuracy drop because we round to integer instead of double, but this should be almost correct and a good enough estimate for the map
-    private static PointPath getPathLengthFromDecisionPointToRoom(String[][] mapping, DecisionPoint decisionPoint, BlockRange2D room) {
+    private static PointPath getPathFromDecisionPointToRoom(String[][] mapping, DecisionPoint decisionPoint, BlockRange2D room) {
         return calculatePathBetweenNodes(mapping, new Point(decisionPoint.getRow(), decisionPoint.getCol()), new Point((room.getRangeX()[1] + room.getRangeX()[0]) / 2, (room.getRangeZ()[1] + room.getRangeZ()[0]) / 2));
     }
 
@@ -966,7 +1046,7 @@ public class GraphGenerator {
         System.out.print("    ");
 
         for(int col = 0; col < mapping[0].length; col++) {
-            System.out.print(String.format("%02d", col) + " ");
+            System.out.print(String.format("%02d", col) + "  ");
         }
 
         System.out.println();
@@ -981,10 +1061,9 @@ public class GraphGenerator {
                 for(BlockRange2D range : roomRanges) {
                     if(range.isInRange(rowIndex, i)) {
                         if(true) {
-                            String ind = String.valueOf(index);
-                            System.out.print(ind.charAt(ind.length() - 1));
+                            System.out.print(String.format("%02d", index));
                         } else {
-                            System.out.print(symbols[index % symbols.length]);
+                            System.out.print(symbols[index % symbols.length] + " ");
                         }
                         found = true;
                         break;
@@ -992,13 +1071,15 @@ public class GraphGenerator {
                     index++;
                 }
 
+                index = 0;
                 for(DecisionPoint point : decisionPoints) {
                     if(point.getRow() == rowIndex && point.getCol() == i) {
 //                        System.out.print("X");
-                        System.out.print(point.connectedRooms.size());
+                        System.out.print(String.format("%02d", index));
                         found = true;
                         break;
                     }
+                    index++;
                 }
 
                 if(!found) {
@@ -1015,10 +1096,10 @@ public class GraphGenerator {
 //                    }
 
                         if (!found) {
-                            System.out.print(" ");
+                            System.out.print("  ");
                         }
                     } else {
-                        System.out.print(row[i]);
+                        System.out.print(row[i] + " ");
                     }
                 }
 

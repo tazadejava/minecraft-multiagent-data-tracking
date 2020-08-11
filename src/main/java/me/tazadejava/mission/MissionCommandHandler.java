@@ -570,13 +570,47 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                         commandSender.sendMessage(ChatColor.RED + "No mission is currently in progress!");
                     }
                     break;
-                case "add":
+                case "delete":
                     if(!(commandSender instanceof Player)) {
                         commandSender.sendMessage(ChatColor.RED + "You must be a player to execute this command!");
                         break;
                     }
 
                     Player p = (Player) commandSender;
+                    if(args.length < 2) {
+                        commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission delete <mission name>");
+                        break;
+                    }
+                    if(!missionManager.doesMissionExist(args[1])) {
+                        commandSender.sendMessage(ChatColor.RED + "That mission does not exist!");
+                        break;
+                    }
+
+                    mission = missionManager.getMission(args[1]);
+
+                    commandSender.sendMessage(ChatColor.RED + "You are about to delete the mission " + mission.getMissionName() + " forever. This cannot be undone.");
+                    commandSender.sendMessage("" + ChatColor.RED + ChatColor.BOLD + "To confirm your choice, hold shift for 2 seconds.");
+
+                    new BukkitRunnable() {
+                        @Override
+                        public void run() {
+                            if(p.isSneaking()) {
+                                missionManager.deleteMission(mission);
+                                commandSender.sendMessage(ChatColor.RED + "Mission " + mission.getMissionName() + " was deleted.");
+                            } else {
+                                commandSender.sendMessage(ChatColor.GRAY + "You didn't hold shift, so the deletion was canceled.");
+                            }
+                        }
+                    }.runTaskLater(plugin, 40L);
+
+                    break;
+                case "add":
+                    if(!(commandSender instanceof Player)) {
+                        commandSender.sendMessage(ChatColor.RED + "You must be a player to execute this command!");
+                        break;
+                    }
+
+                    p = (Player) commandSender;
 
                     if(args.length < 3) {
                         commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission add <mission name> <decisionpoint/edge> [command-specific arguments]");
@@ -967,7 +1001,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
         switch(args.length) {
             case 1:
                 List<String> completions = new ArrayList<>();
-                StringUtil.copyPartialMatches(args[0], Arrays.asList("create", "start", "abort", "list", "set", "import", "getitem", "info", "room", "add"), completions);
+                StringUtil.copyPartialMatches(args[0], Arrays.asList("create", "start", "abort", "list", "set", "import", "getitem", "info", "room", "add", "delete"), completions);
                 Collections.sort(completions);
 
                 return completions;
@@ -981,6 +1015,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                     case "set":
                     case "info":
                     case "add":
+                    case "delete":
                         completions = new ArrayList<>();
 
                         for(Mission mission : missionManager.getAllMissions()) {
