@@ -6,6 +6,7 @@ import me.tazadejava.blockranges.SpecialItemEventListener;
 import me.tazadejava.mission.MissionEventListener;
 import me.tazadejava.mission.MissionCommandHandler;
 import me.tazadejava.mission.MissionManager;
+import me.tazadejava.mission.WorldManager;
 import org.bukkit.event.EventHandler;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -25,6 +26,10 @@ public class ActionTrackerPlugin extends JavaPlugin {
             getDataFolder().mkdir();
         }
 
+        WorldManager worldManager = new WorldManager(this);
+
+        worldManager.loadWorlds();
+
         HashMap<String, SpecialItem> specialItems = new HashMap<>();
         specialItems.put("wand", new SelectionWand());
 
@@ -34,7 +39,7 @@ public class ActionTrackerPlugin extends JavaPlugin {
 
         getServer().getPluginManager().registerEvents(new SpecialItemEventListener(specialItems.values()), this);
 
-        getCommand("mission").setExecutor(commandHandler = new MissionCommandHandler(this, missionManager, specialItems));
+        getCommand("mission").setExecutor(commandHandler = new MissionCommandHandler(this, missionManager, specialItems, worldManager));
         getCommand("mission").setTabCompleter(commandHandler);
     }
 

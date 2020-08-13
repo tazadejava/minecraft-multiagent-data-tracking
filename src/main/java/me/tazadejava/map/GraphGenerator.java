@@ -1,9 +1,6 @@
 package me.tazadejava.map;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
+import com.google.gson.*;
 import me.tazadejava.blockranges.BlockRange2D;
 
 import java.io.*;
@@ -61,6 +58,10 @@ public class GraphGenerator {
             }
 
             return true;
+        }
+
+        public double distance(DecisionPoint other) {
+            return Math.sqrt(Math.pow(row - other.row, 2) + Math.pow(col - other.col, 2));
         }
 
         public Point toPoint() {
@@ -182,8 +183,10 @@ public class GraphGenerator {
 
     public static void main(String[] args) {
         File file = new File("/home/yoshi/Documents/GenesisUROP/OriginalMaps/sparky.csv");
-
         generateGraphFromCSV(file, new File("/home/yoshi/Documents/GenesisUROP/test/"), -2153, 52, 153);
+
+//        File file = new File("/home/yoshi/Documents/GenesisUROP/OriginalMaps/falcon.csv");
+//        generateGraphFromCSV(file, new File("/home/yoshi/Documents/GenesisUROP/test/"), -2109, 60, 144);
     }
 
     //assumes CSV file
@@ -386,17 +389,18 @@ public class GraphGenerator {
 
                     //is the room
                     if(space.adjacentDoorCount <= 4) {
-//                        space.enclosedSpace.addAll(visited); //add to hallway instead of room to make room bounds better
-                        hallwayPoints.addAll(visited);
+                        space.enclosedSpace.addAll(visited); //add to hallway instead of room to make room bounds better
+//                        hallwayPoints.addAll(visited);
 
                         hallwayPoints.removeAll(space.enclosedSpace);
                         enclosedSpaces.add(space.enclosedSpace);
                         adjacentDoors.add(space.adjacentDoorCount);
                     } else {
-                        Point parent = emptyTileParents.get(emptyTile);
+//                        Point parent = emptyTileParents.get(emptyTile);
 
                         //to simplify decision point creation, place a fake door at this point!
-                        mapping[parent.row][parent.col] = "D";
+//                        mapping[parent.row][parent.col] = "D";
+                        mapping[emptyTile.row][emptyTile.col] = "D";
                     }
                 }
             }
@@ -411,7 +415,7 @@ public class GraphGenerator {
         Iterator<Set<Point>> enclosedSpaceIterator = enclosedSpaces.iterator();
         while(enclosedSpaceIterator.hasNext()) {
             Set<Point> enclosedSpace = enclosedSpaceIterator.next();
-            if(enclosedSpace.size() < 4) {
+            if(enclosedSpace.size() < 4) { //if it is a small room, merge
                 for(Point point : enclosedSpace) {
                     for(int i = 0; i < 4; i++) {
                         Point adjacent = new Point(point.row + DIRECTION_DELTAS[i * 2], point.col + DIRECTION_DELTAS[i * 2 + 1]);
@@ -430,7 +434,7 @@ public class GraphGenerator {
                         }
                     }
                 }
-            } else if (enclosedSpace.size() <= 16) {
+            } else if (enclosedSpace.size() <= 16) { //if the room is smaller than the adjacent room by a lot, merge
                 //this may or may not be the best heuristic to determining this!
                 smallEnclosedSpace:
                 for(Point point : enclosedSpace) {
@@ -484,11 +488,14 @@ public class GraphGenerator {
             roomRanges.add(new BlockRange2D(minX, maxX, minZ, maxZ));
         }
 
+        formatPrint(mapping);
+        specialFormatPrint(mapping, roomRanges, new ArrayList<>());
+
         System.out.println("Now determining initial decision points!");
 
         //decision point algorithm:
         //doors will always have a decision point if pointing to the hallway, in the middle of the hallway
-        //decision points that are 1-2 blocks away will be merged to the average location
+        //decision points that are 1-2 blocks away from each other will be merged to the average location
 
         List<DecisionPoint> decisionPoints = new ArrayList<>();
 
@@ -546,6 +553,47 @@ public class GraphGenerator {
         if(!collisionPoints.isEmpty()) {
             System.out.println("    Adding " + collisionPoints.size() + " new decision points!");
             decisionPoints.addAll(collisionPoints);
+        }
+
+        System.out.println("    Merging close decision points!");
+
+        //merge decision points up to 3 blocks away
+
+        HashMap<DecisionPoint, DecisionPoint> mergePoints = new HashMap<>();
+
+        for(DecisionPoint decisionPoint : decisionPoints) {
+            for(DecisionPoint comparePoint : decisionPoints) {
+                if(decisionPoint == comparePoint) {
+                    continue;
+                }
+                double distance = decisionPoint.distance(comparePoint);
+
+                if(distance < 3) {//limitation: multiple merges will only take the last merge
+                    mergePoints.put(decisionPoint, comparePoint);
+                }
+            }
+        }
+
+        for(DecisionPoint mergePoint : mergePoints.keySet()) {
+            DecisionPoint otherPoint = mergePoints.get(mergePoint);
+            if(!decisionPoints.contains(otherPoint)) {
+                continue;
+            }
+
+            System.out.println("Merging decision points " + decisionPoints.indexOf(mergePoint) + " and " + decisionPoints.indexOf(otherPoint));
+
+            decisionPoints.remove(mergePoint);
+            decisionPoints.remove(otherPoint);
+
+            DecisionPoint newPoint = new DecisionPoint((mergePoint.row + otherPoint.row) / 2d, (mergePoint.col + otherPoint.col) / 2d);
+
+            newPoint.connectedRooms.putAll(mergePoint.connectedRooms);
+            newPoint.connectedRooms.putAll(otherPoint.connectedRooms);
+
+            newPoint.connectedDecisionPoints.putAll(mergePoint.connectedDecisionPoints);
+            newPoint.connectedDecisionPoints.putAll(otherPoint.connectedDecisionPoints);
+
+            decisionPoints.add(newPoint);
         }
 
         //debug via input
@@ -662,6 +710,7 @@ public class GraphGenerator {
 
                     JsonObject pathData = pathToJsonObject(path, startX, y, startZ);
 
+                    decisionNodeData.add("ROOM " + roomRanges.indexOf(adjacent), pathData);
                     roomGraphData.get(adjacent).add("DECISION " + decisionPoints.indexOf(point), pathData);
                 }
 
@@ -738,13 +787,19 @@ public class GraphGenerator {
             System.out.println();
         }
 
+        Gson gson = new GsonBuilder().setPrettyPrinting().create();
+
         if(roomGraphData != null) {
             for (BlockRange2D range : roomRanges) {
                 System.out.println("ROOM " + roomRanges.indexOf(range));
 
-                for(Map.Entry<BlockRange2D, JsonObject> entry : roomGraphData.entrySet()) {
-                    System.out.println("\t" + entry.getValue());
+                JsonArray connections = new JsonArray();
+
+                for(Map.Entry<String, JsonElement>  entry : roomGraphData.get(range).entrySet()) {
+                    connections.add(entry.getKey());
                 }
+
+                System.out.println("\t" + gson.toJson(connections));
 
                 System.out.println();
             }

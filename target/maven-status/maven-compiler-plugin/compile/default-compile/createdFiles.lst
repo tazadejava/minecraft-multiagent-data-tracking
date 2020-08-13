@@ -19,6 +19,7 @@ me/tazadejava/statstracker/EnhancedStatsTracker$1.class
 me/tazadejava/mission/MissionGraph$MissionVertexType.class
 me/tazadejava/mission/MissionCommandHandler$7.class
 me/tazadejava/mission/MissionManager$2.class
+me/tazadejava/mission/WorldManager.class
 me/tazadejava/mission/MissionCommandHandler$4.class
 me/tazadejava/mission/MissionManager.class
 me/tazadejava/analyzer/PlayerAnalyzer$Direction.class

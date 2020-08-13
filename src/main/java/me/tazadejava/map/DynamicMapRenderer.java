@@ -28,6 +28,8 @@ public class DynamicMapRenderer extends MapRenderer {
     private MissionManager manager;
     private Player player;
 
+    private boolean showRoomAndDecisionLabels;
+
     private PlayerAnalyzer analyzer;
     private Mission mission;
 
@@ -35,9 +37,10 @@ public class DynamicMapRenderer extends MapRenderer {
 
     private int[] xRange, zRange;
 
-    private DynamicMapRenderer(MissionManager missionManager, Player player) {
+    private DynamicMapRenderer(MissionManager missionManager, Player player, boolean showRoomAndDecisionLabels) {
         this.manager = missionManager;
         this.player = player;
+        this.showRoomAndDecisionLabels = showRoomAndDecisionLabels;
 
         try {
             InputStream stream = getClass().getClassLoader().getResourceAsStream("sparky_map.png");
@@ -51,13 +54,13 @@ public class DynamicMapRenderer extends MapRenderer {
         zRange = new int[] {152, 199};
     }
 
-    public static ItemStack getMap(MissionManager missionManager, Player player) {
+    public static ItemStack getMap(MissionManager missionManager, Player player, boolean showRoomAndDecisionLabels) {
         MapView map = Bukkit.createMap(Bukkit.getWorlds().get(0));
         map.getRenderers().clear();
         map.setLocked(true);
         map.setUnlimitedTracking(false);
         map.setScale(MapView.Scale.NORMAL);
-        map.addRenderer(new DynamicMapRenderer(missionManager, player));
+        map.addRenderer(new DynamicMapRenderer(missionManager, player, showRoomAndDecisionLabels));
 
         ItemStack mapItem = new ItemStack(Material.FILLED_MAP);
         MapMeta meta = (MapMeta) mapItem.getItemMeta();
@@ -142,6 +145,11 @@ public class DynamicMapRenderer extends MapRenderer {
             return;
         }
 
+        if(showRoomAndDecisionLabels) {
+            drawDecisionAndRoomLabels(graphics, mapOffsetX, mapOffsetZ);
+            return;
+        }
+
         List<MissionGraph.MissionVertex> bestPath = analyzer.getLastBestPath();
 
         if(bestPath == null) {
@@ -178,7 +186,9 @@ public class DynamicMapRenderer extends MapRenderer {
             graphics.setColor(new Color(0, colorIntensity, 0));
             graphics.fillOval(x - (iconSize / 2), z - (iconSize / 2), iconSize, iconSize);
         }
+    }
 
+    private void drawDecisionAndRoomLabels(Graphics2D graphics, int mapOffsetX, int mapOffsetZ) {
         //draw decision and room circles
         graphics.setColor(Color.ORANGE);
         int ovalSize = 6;
@@ -226,7 +236,6 @@ public class DynamicMapRenderer extends MapRenderer {
             graphics.drawString(decisionPoint, locX - (int) (textBounds.getWidth() / 2), locZ - (int) (textBounds.getHeight() / 2) + font.getAscent());
         }
     }
-
     /**
      * Scale from 0 to 1 based on where on the map it is
      * @param range

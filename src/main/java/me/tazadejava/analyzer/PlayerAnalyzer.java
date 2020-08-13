@@ -117,12 +117,12 @@ public class PlayerAnalyzer {
         calculateRelativeHumanDirections();
 
         //give the player a map
-        if(DEBUG_PRINT) {
-            player.getInventory().setItemInMainHand(DynamicMapRenderer.getMap(missionManager, player));
-            player.getInventory().setItemInOffHand(MapOverlayRenderer.getMap());
-        } else {
-            player.getInventory().setItemInMainHand(DynamicMapRenderer.getMap(missionManager, player));
-        }
+//        if(DEBUG_PRINT) {
+            player.getInventory().setItemInMainHand(DynamicMapRenderer.getMap(missionManager, player, false));
+            player.getInventory().setItemInOffHand(DynamicMapRenderer.getMap(missionManager, player, true));
+//        } else {
+//            player.getInventory().setItemInMainHand(DynamicMapRenderer.getMap(missionManager, player));
+//        }
 
     }
 
@@ -195,6 +195,9 @@ public class PlayerAnalyzer {
             }
         } else {
             if (lastRecommendationMessage != null) {
+                //update direction if player looked a different way
+                analyzeNextBestMove(lastBestPath, null);
+
                 Scoreboard scoreboard = Bukkit.getScoreboardManager().getNewScoreboard();
 
                 Objective objective = scoreboard.registerNewObjective("path", "dummy", "" + ChatColor.GREEN + ChatColor.BOLD + "Next Move:");
@@ -570,7 +573,7 @@ public class PlayerAnalyzer {
         }
 
         //now, iteratively find the next best room from any current room (starting at player's node)
-        MissionGraph.MissionVertex currentVertex = roomPath.get(roomPath.size() - 1); //TODO; change to the ending node from above
+        MissionGraph.MissionVertex currentVertex = roomPath.get(roomPath.size() - 1);
 
         for(int i = 0; i < 30; i++) {
             MissionGraph.MissionVertex minVertexExplored = null;

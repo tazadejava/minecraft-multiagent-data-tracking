@@ -12,10 +12,7 @@ import me.tazadejava.blockranges.SpecialItem;
 import me.tazadejava.map.DynamicMapRenderer;
 import me.tazadejava.map.MapOverlayRenderer;
 import me.tazadejava.statstracker.PreciseVisibleBlocksRaycaster;
-import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
-import org.bukkit.Location;
-import org.bukkit.Material;
+import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.data.BlockData;
@@ -44,6 +41,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
     private final ActionTrackerPlugin plugin;
     private final MissionManager missionManager;
     private final HashMap<String, SpecialItem> specialItems;
+    private final WorldManager worldManager;
 
     private HashMap<Location, BlockState> lastBlockState = new HashMap<>();
     private HashMap<Location, Player> blockPlayer = new HashMap<>();
@@ -53,10 +51,11 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
     private HashMap<Player, Mission> roomBuilderMissions = new HashMap<>();
     private HashMap<Player, int[]> roomBuilderRaycastYBounds = new HashMap<>();
 
-    public MissionCommandHandler(ActionTrackerPlugin plugin, MissionManager missionManager, HashMap<String, SpecialItem> specialItems) {
+    public MissionCommandHandler(ActionTrackerPlugin plugin, MissionManager missionManager, HashMap<String, SpecialItem> specialItems, WorldManager worldManager) {
         this.plugin = plugin;
         this.missionManager = missionManager;
         this.specialItems = specialItems;
+        this.worldManager = worldManager;
 
         defineExcludedTransformations();
     }
@@ -923,14 +922,82 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                 case "gps":
                     if(commandSender instanceof Player) {
                         p = (Player) commandSender;
-                        p.getInventory().setItemInMainHand(DynamicMapRenderer.getMap(missionManager, p));
+                        p.getInventory().setItemInMainHand(DynamicMapRenderer.getMap(missionManager, p, true));
                     }
                     break;
                 case "mapgps":
                     if(commandSender instanceof Player) {
                         p = (Player) commandSender;
-                        p.getInventory().setItemInMainHand(DynamicMapRenderer.getMap(missionManager, p));
-                        p.getInventory().setItemInOffHand(MapOverlayRenderer.getMap());
+                        p.getInventory().setItemInMainHand(DynamicMapRenderer.getMap(missionManager, p, true));
+                        p.getInventory().setItemInOffHand(DynamicMapRenderer.getMap(missionManager, p, false));
+                    }
+                    break;
+                case "world":
+                    if(!(commandSender instanceof Player)) {
+                        commandSender.sendMessage(ChatColor.RED + "You must be a player to execute this command!");
+                        break;
+                    }
+
+                    p = (Player) commandSender;
+
+                    if(args.length == 2 && args[1].equals("list")) {
+                        List<String> loadedWorlds = new ArrayList<>();
+                        Set<String> worldManagerLoadedWorlds = new HashSet<>(worldManager.getWorlds());
+
+                        for(World loadedWorld : Bukkit.getWorlds()) {
+                            loadedWorlds.add(loadedWorld.getName());
+                        }
+
+                        p.sendMessage("Loaded worlds (" + loadedWorlds.size() + "):");
+
+                        for(String worldName : loadedWorlds) {
+                            if (worldManagerLoadedWorlds.contains(worldName)) {
+                                p.sendMessage(ChatColor.AQUA + "- " + worldName);
+                            } else {
+                                p.sendMessage(ChatColor.GRAY + "- " + worldName);
+                            }
+                        }
+                        break;
+                    }
+                    if(args.length < 3) {
+                        commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission world <tp/load/unload> <world name>");
+                        break;
+                    }
+
+                    World world = Bukkit.getWorld(argsOriginal[2]);
+
+                    switch(args[1]) {
+                        case "tp":
+                            if(world == null) {
+                                p.sendMessage(ChatColor.RED + "That world does not exist. You must load it first!");
+                                break;
+                            }
+
+                            p.teleport(world.getSpawnLocation());
+                            p.sendMessage("Teleported you to the world " + argsOriginal[2] + "'s spawn location!");
+                            break;
+                        case "load":
+                            if(world != null) {
+                                p.sendMessage(ChatColor.RED + "That world already exists!");
+                                break;
+                            }
+                            if(!worldManager.doesWorldFolderExist(argsOriginal[2])) {
+                                p.sendMessage(ChatColor.RED + "That world folder does not exist!");
+                                break;
+                            }
+
+                            worldManager.loadNewWorld(argsOriginal[2]);
+                            p.sendMessage("Loaded world " + argsOriginal[2] + ". Teleport to it via /mission world tp " + argsOriginal[2]);
+                            break;
+                        case "unload":
+                            if(world == null) {
+                                p.sendMessage(ChatColor.RED + "That world does not exist.");
+                                break;
+                            }
+
+                            worldManager.unloadWorld(argsOriginal[2]);
+                            p.sendMessage("Successfully unloaded the world " + argsOriginal[2] + ".");
+                            break;
                     }
                     break;
                 default:
@@ -1001,7 +1068,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
         switch(args.length) {
             case 1:
                 List<String> completions = new ArrayList<>();
-                StringUtil.copyPartialMatches(args[0], Arrays.asList("create", "start", "abort", "list", "set", "import", "getitem", "info", "room", "add", "delete"), completions);
+                StringUtil.copyPartialMatches(args[0], Arrays.asList("create", "start", "abort", "list", "set", "import", "getitem", "info", "room", "add", "delete", "world"), completions);
                 Collections.sort(completions);
 
                 return completions;
@@ -1040,6 +1107,11 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                             }
                             return completions;
                         }
+                    case "world":
+                        completions = new ArrayList<>();
+                        StringUtil.copyPartialMatches(args[1], Arrays.asList("tp", "load", "unload", "list"), completions);
+
+                        return completions;
                     default:
                         return null;
                 }
