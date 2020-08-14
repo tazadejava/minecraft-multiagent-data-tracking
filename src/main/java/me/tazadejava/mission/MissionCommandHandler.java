@@ -922,14 +922,14 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                 case "gps":
                     if(commandSender instanceof Player) {
                         p = (Player) commandSender;
-                        p.getInventory().setItemInMainHand(DynamicMapRenderer.getMap(missionManager, p, true));
+                        p.getInventory().setItemInMainHand(DynamicMapRenderer.getMap(missionManager, p, true, p.getWorld().getName().equals("falcon") ? DynamicMapRenderer.CustomMap.FALCON : DynamicMapRenderer.CustomMap.SPARKY));
                     }
                     break;
                 case "mapgps":
                     if(commandSender instanceof Player) {
                         p = (Player) commandSender;
-                        p.getInventory().setItemInMainHand(DynamicMapRenderer.getMap(missionManager, p, true));
-                        p.getInventory().setItemInOffHand(DynamicMapRenderer.getMap(missionManager, p, false));
+                        p.getInventory().setItemInMainHand(DynamicMapRenderer.getMap(missionManager, p, true, p.getWorld().getName().equals("falcon") ? DynamicMapRenderer.CustomMap.FALCON : DynamicMapRenderer.CustomMap.SPARKY));
+                        p.getInventory().setItemInOffHand(DynamicMapRenderer.getMap(missionManager, p, false, p.getWorld().getName().equals("falcon") ? DynamicMapRenderer.CustomMap.FALCON : DynamicMapRenderer.CustomMap.SPARKY));
                     }
                     break;
                 case "world":

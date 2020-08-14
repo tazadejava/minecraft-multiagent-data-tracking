@@ -117,13 +117,13 @@ public class PlayerAnalyzer {
         calculateRelativeHumanDirections();
 
         //give the player a map
-//        if(DEBUG_PRINT) {
-            player.getInventory().setItemInMainHand(DynamicMapRenderer.getMap(missionManager, player, false));
-            player.getInventory().setItemInOffHand(DynamicMapRenderer.getMap(missionManager, player, true));
-//        } else {
-//            player.getInventory().setItemInMainHand(DynamicMapRenderer.getMap(missionManager, player));
-//        }
-
+        if(mission.getPlayerSpawnLocation().getWorld().getName().equals("falcon")) {
+            player.getInventory().setItemInMainHand(DynamicMapRenderer.getMap(missionManager, player, false, DynamicMapRenderer.CustomMap.FALCON));
+            player.getInventory().setItemInOffHand(DynamicMapRenderer.getMap(missionManager, player, true, DynamicMapRenderer.CustomMap.FALCON));
+        } else {
+            player.getInventory().setItemInMainHand(DynamicMapRenderer.getMap(missionManager, player, false, DynamicMapRenderer.CustomMap.SPARKY));
+            player.getInventory().setItemInOffHand(DynamicMapRenderer.getMap(missionManager, player, true, DynamicMapRenderer.CustomMap.SPARKY));
+        }
     }
 
     private void calculateRelativeHumanDirections() {

@@ -182,11 +182,11 @@ public class GraphGenerator {
     };
 
     public static void main(String[] args) {
-        File file = new File("/home/yoshi/Documents/GenesisUROP/OriginalMaps/sparky.csv");
-        generateGraphFromCSV(file, new File("/home/yoshi/Documents/GenesisUROP/test/"), -2153, 52, 153);
+//        File file = new File("/home/yoshi/Documents/GenesisUROP/OriginalMaps/sparky.csv");
+//        generateGraphFromCSV(file, new File("/home/yoshi/Documents/GenesisUROP/test/"), -2153, 52, 153);
 
-//        File file = new File("/home/yoshi/Documents/GenesisUROP/OriginalMaps/falcon.csv");
-//        generateGraphFromCSV(file, new File("/home/yoshi/Documents/GenesisUROP/test/"), -2109, 60, 144);
+        File file = new File("/home/yoshi/Documents/GenesisUROP/OriginalMaps/falcon.csv");
+        generateGraphFromCSV(file, new File("/home/yoshi/Documents/GenesisUROP/test/"), -2109, 60, 144);
     }
 
     //assumes CSV file
@@ -254,6 +254,29 @@ public class GraphGenerator {
         String[][] mapping = lines.toArray(new String[0][0]);
 
         formatPrint(mapping);
+
+        System.out.println("Merging adjacent doors to simplify calculations...");
+
+        int mergedDoorsCount = 0;
+
+        for(int x = 0; x < mapping.length; x++) {
+            for(int z = 0; z < mapping[x].length; z++) {
+                if(mapping[x][z].equals("D")) {
+                    //check adjacent for D. if so, change to a wall
+                    for(int i = 0; i < 4; i++) {
+                        if(mapping[x + DIRECTION_DELTAS[i * 2]][z + DIRECTION_DELTAS[i * 2 + 1]].equals("D")) {
+                            mergedDoorsCount++;
+                            mapping[x + DIRECTION_DELTAS[i * 2]][z + DIRECTION_DELTAS[i * 2 + 1]] = "W";
+                        }
+                    }
+                }
+            }
+        }
+
+        if(mergedDoorsCount > 0) {
+            System.out.println("MERGED " + mergedDoorsCount + " DOORS.");
+            formatPrint(mapping);
+        }
 
         //first, find all enclosed spaces
 
@@ -464,6 +487,28 @@ public class GraphGenerator {
 
             index++;
         }
+
+        System.out.println("Now, checking for non-rectangular rooms and separating into separate rooms...");
+        //TODO: this can be revised by storing multiple bounds instead of one in the future.
+
+        //process:
+        /*
+
+        - if not all 4 corners are in the room, then something is wrong
+
+        - ***this only works for rooms that are in an L shape of some form
+
+        - split the room into 4
+
+        - randomly expand one side for 2 corners
+
+        - put that into one room
+
+        - create a new room for the remaining corner piece
+
+         */
+
+        //TODO: IMPLEMENT THE ROOM BOUNDING
 
         System.out.println("Now determining room bounds!");
 

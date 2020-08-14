@@ -25,6 +25,10 @@ import java.util.List;
 
 public class DynamicMapRenderer extends MapRenderer {
 
+    public enum CustomMap {
+        FALCON, SPARKY;
+    }
+
     private MissionManager manager;
     private Player player;
 
@@ -37,30 +41,46 @@ public class DynamicMapRenderer extends MapRenderer {
 
     private int[] xRange, zRange;
 
-    private DynamicMapRenderer(MissionManager missionManager, Player player, boolean showRoomAndDecisionLabels) {
+    private DynamicMapRenderer(MissionManager missionManager, Player player, boolean showRoomAndDecisionLabels, CustomMap map) {
         this.manager = missionManager;
         this.player = player;
         this.showRoomAndDecisionLabels = showRoomAndDecisionLabels;
 
-        try {
-            InputStream stream = getClass().getClassLoader().getResourceAsStream("sparky_map.png");
-            mapImage = ImageIO.read(stream);
-            stream.close();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        switch(map) {
+            case SPARKY:
+                try {
+                    InputStream stream = getClass().getClassLoader().getResourceAsStream("sparky_map.png");
+                    mapImage = ImageIO.read(stream);
+                    stream.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
 
-        xRange = new int[] {-2154, -2105};
-        zRange = new int[] {152, 199};
+                xRange = new int[] {-2154, -2105};
+                zRange = new int[] {152, 199};
+                break;
+            case FALCON:
+                try {
+                    InputStream stream = getClass().getClassLoader().getResourceAsStream("falcon_map.png");
+                    mapImage = ImageIO.read(stream);
+                    stream.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+
+                xRange = new int[] {-2109, -2020};
+                zRange = new int[] {144, 192};
+                break;
+        }
     }
 
-    public static ItemStack getMap(MissionManager missionManager, Player player, boolean showRoomAndDecisionLabels) {
+    public static ItemStack getMap(MissionManager missionManager, Player player, boolean showRoomAndDecisionLabels, CustomMap mapType) {
         MapView map = Bukkit.createMap(Bukkit.getWorlds().get(0));
         map.getRenderers().clear();
         map.setLocked(true);
         map.setUnlimitedTracking(false);
         map.setScale(MapView.Scale.NORMAL);
-        map.addRenderer(new DynamicMapRenderer(missionManager, player, showRoomAndDecisionLabels));
+        map.addRenderer(new DynamicMapRenderer(missionManager, player, showRoomAndDecisionLabels, mapType));
 
         ItemStack mapItem = new ItemStack(Material.FILLED_MAP);
         MapMeta meta = (MapMeta) mapItem.getItemMeta();
