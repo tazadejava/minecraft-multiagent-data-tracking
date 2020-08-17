@@ -12,7 +12,6 @@ import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.data.BlockData;
-import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -26,7 +25,10 @@ public class MissionRoom {
 
     private String roomName;
     private BlockRange2D bounds;
-    private Set<Location> visibleRoomBlocks;
+    @Deprecated
+    private Set<Location> visibleRoomBlocks; //the recommendation system is not realistically capable of obtaining a list of visible room blocks before the player enters the room. thus, it has been discontinued
+
+    private Set<Location> entranceExitLocations = new HashSet<>();
 
     private boolean isScanningRoomBlocks;
     private Runnable afterTimerEnds;
@@ -49,6 +51,14 @@ public class MissionRoom {
                 visibleRoomBlocks.add(new Location(world, Integer.parseInt(loc[0]), Integer.parseInt(loc[1]), Integer.parseInt(loc[2])));
             }
         }
+
+        if(data.has("entranceExitLocations")) {
+            JsonArray locations = data.getAsJsonArray("entranceExitLocations");
+            for(JsonElement locString : locations) {
+                String[] loc = locString.getAsString().split(" ");
+                entranceExitLocations.add(new Location(world, Integer.parseInt(loc[0]), Integer.parseInt(loc[1]), Integer.parseInt(loc[2])));
+            }
+        }
     }
 
     public void save(JsonObject mainObject) {
@@ -63,6 +73,14 @@ public class MissionRoom {
 //        }
 
 //        roomData.add("blocks", blocksArray);
+
+        JsonArray entranceExitArray = new JsonArray();
+
+        for(Location loc : entranceExitLocations) {
+            entranceExitArray.add(loc.getBlockX() + " " + loc.getBlockY() + " " + loc.getBlockZ());
+        }
+
+        roomData.add("entranceExitLocations", entranceExitArray);
 
         mainObject.add(roomName, roomData);
     }
@@ -123,6 +141,10 @@ public class MissionRoom {
 
     public String getRoomName() {
         return roomName;
+    }
+
+    public Set<Location> getEntranceExitLocations() {
+        return entranceExitLocations;
     }
 
     @Override

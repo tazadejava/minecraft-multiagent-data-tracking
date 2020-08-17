@@ -283,8 +283,27 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                     restoreBlocks(commandSender);
                     break;
 
+                    //going to delete the falcon map, recreate it, then start the mission
                 case "test":
-                    missionManager.getMission(args[1]).getOriginalMissionGraph().getShortestPathToAllVertices(MissionGraph.MissionVertexType.ROOM, "0");
+                    if(commandSender instanceof Player) {
+                        Player p = (Player) commandSender;
+
+                        p.performCommand("mission delete Falcon");
+
+                        new BukkitRunnable() {
+                            @Override
+                            public void run() {
+                                p.performCommand("mission import Falcon falcon -2108 60 144");
+
+                                new BukkitRunnable() {
+                                    @Override
+                                    public void run() {
+                                        p.performCommand("mission start Falcon");
+                                    }
+                                }.runTaskLater(plugin, 5L);
+                            }
+                        }.runTaskLater(plugin, 45L);
+                    }
                     break;
 
                 case "graphtest": //testing command to find distances between any two nodes; unsafe to crashing if supplied incorrect arguments

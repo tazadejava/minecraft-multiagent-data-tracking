@@ -4,12 +4,22 @@ import com.google.gson.JsonObject;
 import org.bukkit.Location;
 import org.bukkit.block.Block;
 
+/**
+ * Represents rectangular boundary. Primarily used to define the boundaries of a room in a mission map.
+ */
 public class BlockRange2D {
 
     public int startX, startZ, endX, endZ;
 
     private Block startBlock, endBlock;
 
+    /**
+     * Start X/Z has to be lower than end X/Z!
+     * @param startX
+     * @param endX
+     * @param startZ
+     * @param endZ
+     */
     public BlockRange2D(int startX, int endX, int startZ, int endZ) {
         this.startX = startX;
         this.endX = endX;
@@ -17,6 +27,9 @@ public class BlockRange2D {
         this.endZ = endZ;
     }
 
+    /**
+     * Used for defining block ranges dynamically via the SelectionWand tool.
+     */
     public BlockRange2D() {
 
     }
@@ -72,7 +85,7 @@ public class BlockRange2D {
     }
 
     /**
-     * Expands in all four directions by amount
+     * Expands in all four directions by amount of blocks
      * @param amount The number of blocks to expand the range in all directions
      * @return The same block range, with the expansion completed
      */

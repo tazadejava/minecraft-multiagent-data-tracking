@@ -3,7 +3,6 @@ package me.tazadejava.analyzer;
 import com.google.gson.JsonObject;
 import me.tazadejava.blockranges.BlockRange2D;
 import me.tazadejava.map.DynamicMapRenderer;
-import me.tazadejava.map.MapOverlayRenderer;
 import me.tazadejava.mission.Mission;
 import me.tazadejava.mission.MissionGraph;
 import me.tazadejava.mission.MissionManager;
@@ -58,10 +57,8 @@ public class PlayerAnalyzer {
     private Mission mission;
 
     //TODO: these are questions that will be asked to the player before any experiment starts, obtained via data beforehand
+    //TODO: this can be used with Genesis, for example, to determine if specific players need recommendations at any given time
     private boolean isSpatiallyAware = true;
-
-    //TODO: learn how to communicate with genesis to develop rules
-        //TODO: still need to learn a bit more on how to maximize genesis usage to my advantage
 
     //the indices will represent the victim number
     private List<Location> victimBlocks;
@@ -88,8 +85,7 @@ public class PlayerAnalyzer {
 
     private HashMap<Direction, HashMap<Direction, String>> relativeHumanDirections = new HashMap<>();
 
-    //TODO: THIS ONLY WORKS FOR THE SPARKY MAP; IN THE FUTURE, MAKE IT CONFIGURABLE BY THE MISSION
-    private PreciseVisibleBlocksRaycaster visibleBlocksRaycaster = new PreciseVisibleBlocksRaycaster(true, true, false, 52, 54);
+    private PreciseVisibleBlocksRaycaster visibleBlocksRaycaster;
     private long lastRaycastTime;
 
     private static final boolean PRINT = true;
@@ -115,6 +111,8 @@ public class PlayerAnalyzer {
         currentRoom = null;
 
         calculateRelativeHumanDirections();
+
+        visibleBlocksRaycaster = new PreciseVisibleBlocksRaycaster(true, true, false, mission.getPlayerSpawnLocation().getBlockY(), mission.getPlayerSpawnLocation().getBlockY() + 2);
 
         //give the player a map
         if(mission.getPlayerSpawnLocation().getWorld().getName().equals("falcon")) {
@@ -630,6 +628,24 @@ public class PlayerAnalyzer {
             reconstructedPath.add(path.getPath().getLast());
         }
 
+        //add additional reference locations for the room in the path, if applicable
+        if(reconstructedPath.size() >= 2 && reconstructedPath.get(1).type == MissionGraph.MissionVertexType.ROOM) {
+            MissionGraph.MissionVertex vertex = reconstructedPath.get(1);
+            Location closestLocation = vertex.location;
+            double closestDistance = closestLocation.distanceSquared(player.getLocation());
+
+            for(Location referenceLoc : graph.getRoomEntranceExitLocations(mission.getRoom(vertex.name))) {
+                double distance = referenceLoc.distanceSquared(player.getLocation());
+
+                if(distance < closestDistance) {
+                    closestDistance = distance;
+                    closestLocation = referenceLoc;
+                }
+            }
+
+            vertex.playerReferenceLocation = closestLocation;
+        }
+
         if(PRINT) {
             double timeToFinish = calculatePlayerTimeToFinish(reconstructedPath, totalPathLength);
             String timeToFinishMsg;
@@ -889,7 +905,7 @@ public class PlayerAnalyzer {
         if(bestPath.size() > 1) {
             if(bestPath.get(1).type == MissionGraph.MissionVertexType.ROOM) {
                 Location playerToRoomLoc = player.getLocation().clone();
-                playerToRoomLoc.setDirection(bestPath.get(1).location.toVector().subtract(player.getLocation().toVector()));
+                playerToRoomLoc.setDirection(bestPath.get(1).getPlayerReferenceLocation().toVector().subtract(player.getLocation().toVector()));
                 Direction roomDir = getDirection(playerToRoomLoc);
 
                 if(bestPath.get(0).type == MissionGraph.MissionVertexType.DECISION) {
@@ -903,7 +919,7 @@ public class PlayerAnalyzer {
                 }
             } else {
                 Location playerToRoomLoc = player.getLocation().clone();
-                playerToRoomLoc.setDirection(bestPath.get(1).location.toVector().subtract(player.getLocation().toVector()));
+                playerToRoomLoc.setDirection(bestPath.get(1).getPlayerReferenceLocation().toVector().subtract(player.getLocation().toVector()));
                 Direction roomDir = getDirection(playerToRoomLoc);
 
                 if(bestPath.get(0).type == MissionGraph.MissionVertexType.DECISION) {
@@ -1029,8 +1045,20 @@ public class PlayerAnalyzer {
             Location loc = new Location(player.getWorld(), lineOfSight.get("x").getAsDouble(), lineOfSight.get("y").getAsDouble(), lineOfSight.get("z").getAsDouble());
             Block block = loc.getBlock();
 
+            MissionRoom blockRoom = null;
+            for(MissionRoom room : mission.getRooms()) {
+                if(room.getBounds().isInRange(loc)) {
+                    blockRoom = room;
+                    break;
+                }
+            }
+
             if(currentVictimTarget != null && !currentVictimTarget.equals(block)) {
-                log(player.getName() + " looked away from victim " + (victimBlocks.indexOf(currentVictimTarget.getLocation())) + ".");
+                if(blockRoom == null) {
+                    log(player.getName() + " looked away from victim " + (victimBlocks.indexOf(currentVictimTarget.getLocation())) + ".");
+                } else {
+                    log(player.getName() + " looked away from victim " + (victimBlocks.indexOf(currentVictimTarget.getLocation())) + " in room " + blockRoom.getRoomName() + ".");
+                }
                 currentVictimTarget = null;
             }
 
@@ -1039,7 +1067,11 @@ public class PlayerAnalyzer {
                     victimBlocks.add(block.getLocation());
                 }
 
-                log(player.getName() + " looked at victim " + (victimBlocks.indexOf(block.getLocation())) + ".");
+                if(blockRoom == null) {
+                    log(player.getName() + " looked at victim " + (victimBlocks.indexOf(block.getLocation())) + ".");
+                } else {
+                    log(player.getName() + " looked at victim " + (victimBlocks.indexOf(block.getLocation())) + " in room " + blockRoom.getRoomName() + ".");
+                }
                 currentVictimTarget = block;
             }
         }

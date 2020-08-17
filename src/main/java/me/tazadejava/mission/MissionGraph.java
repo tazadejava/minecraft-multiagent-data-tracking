@@ -5,7 +5,6 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import me.tazadejava.actiontracker.Utils;
 import me.tazadejava.blockranges.BlockRange2D;
-import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
@@ -24,6 +23,9 @@ public class MissionGraph {
 
         public MissionVertexType type;
         public Location location;
+
+        //used to determine door locations for rooms
+        public Location playerReferenceLocation;
 
         public String name;
 
@@ -45,6 +47,10 @@ public class MissionGraph {
             MissionVertex that = (MissionVertex) o;
             return type == that.type &&
                     Objects.equals(name, that.name);
+        }
+
+        public Location getPlayerReferenceLocation() {
+            return playerReferenceLocation == null ? location : playerReferenceLocation;
         }
 
         @Override
@@ -98,12 +104,15 @@ public class MissionGraph {
             0, -1
     };
 
-    private Set<Material> transparentMaterials = new HashSet<>(Arrays.asList(Material.AIR, Material.OAK_DOOR, Material.OAK_WALL_SIGN, Material.OAK_SIGN));
+    //TODO: this is my no means a comprehensive list... in the future, to prevent having to mark EVERY material, maybe use BlockStates instead?
+    private Set<Material> passableMaterials = new HashSet<>(Arrays.asList(Material.AIR, Material.OAK_DOOR, Material.OAK_WALL_SIGN, Material.OAK_SIGN, Material.IRON_DOOR, Material.DARK_OAK_DOOR, Material.LEVER, Material.LIGHT_WEIGHTED_PRESSURE_PLATE, Material.HEAVY_WEIGHTED_PRESSURE_PLATE, Material.STONE_PRESSURE_PLATE, Material.REDSTONE_WALL_TORCH));
 
     private Mission mission;
 
     private HashMap<String, MissionVertex> roomVertices = new HashMap<>();
     private HashMap<String, MissionVertex> decisionVertices = new HashMap<>();
+
+    private HashMap<String, Set<Location>> roomEntranceExitLocations = new HashMap<>();
 
     private HashMap<MissionVertex, Set<MissionVertex>> edges = new HashMap<>();
     private HashMap<MissionVertex, HashMap<MissionVertex, Double>> edgeWeights = new HashMap<>();
@@ -111,6 +120,7 @@ public class MissionGraph {
 
     //represents edges that have been verified to be traversable
     private HashMap<MissionVertex, Set<MissionVertex>> verifiedEdges = new HashMap<>();
+
 
     public MissionGraph(Mission mission) {
         this.mission = mission;
@@ -121,6 +131,10 @@ public class MissionGraph {
 
         if(data == null) {
             return;
+        }
+
+        for(MissionRoom room : mission.getRooms()) {
+            roomEntranceExitLocations.put(room.getRoomName(), new HashSet<>(room.getEntranceExitLocations()));
         }
 
         for(Map.Entry<String, JsonElement> entry : data.entrySet()) {
@@ -165,6 +179,10 @@ public class MissionGraph {
         graph.roomVertices = roomVertices;
         graph.decisionVertices = decisionVertices;
 
+        for(String roomName : roomEntranceExitLocations.keySet()) {
+            graph.roomEntranceExitLocations.put(roomName, new HashSet<>(roomEntranceExitLocations.get(roomName)));
+        }
+
         for(MissionVertex vertex : edges.keySet()) {
             graph.edges.put(vertex, new HashSet<>(edges.get(vertex)));
             graph.edgeWeights.put(vertex, new HashMap<>(edgeWeights.get(vertex)));
@@ -175,16 +193,9 @@ public class MissionGraph {
     }
 
     public MissionGraph cloneGraphOnly() {
-        MissionGraph graph = new MissionGraph();
+        MissionGraph graph = clone();
 
-        graph.roomVertices = roomVertices;
-        graph.decisionVertices = decisionVertices;
-
-        for(MissionVertex vertex : edges.keySet()) {
-            graph.edges.put(vertex, new HashSet<>(edges.get(vertex)));
-            graph.edgeWeights.put(vertex, new HashMap<>(edgeWeights.get(vertex)));
-            graph.edgePaths.put(vertex, new HashMap<>(edgePaths.get(vertex)));
-        }
+        graph.mission = null;
 
         return graph;
     }
@@ -220,6 +231,10 @@ public class MissionGraph {
         double averageZ = (room.getBounds().startZ + room.getBounds().endZ) / 2d;
         Location middle = new Location(mission.getPlayerSpawnLocation().getWorld(), averageX, mission.getPlayerSpawnLocation().getY(), averageZ);
         return middle;
+    }
+
+    public Set<Location> getRoomEntranceExitLocations(MissionRoom room) {
+        return roomEntranceExitLocations.get(room.getRoomName());
     }
 
     //if not found in database, then define it first
@@ -325,9 +340,9 @@ public class MissionGraph {
                         continue;
                     }
 
-                    if(!transparentMaterials.contains(adjacentLoc.clone().add(0, -1, 0).getBlock().getType())) { //under foot level
-                        if (transparentMaterials.contains(adjacentLoc.getBlock().getType())) { //foot level
-                            if (transparentMaterials.contains(adjacentLoc.clone().add(0, 1, 0).getBlock().getType())) { //eye level
+                    if(!passableMaterials.contains(adjacentLoc.clone().add(0, -1, 0).getBlock().getType())) { //under foot level
+                        if (passableMaterials.contains(adjacentLoc.getBlock().getType())) { //foot level
+                            if (passableMaterials.contains(adjacentLoc.clone().add(0, 1, 0).getBlock().getType())) { //eye level
                                 int adjacentBlocksFromStart = numberOfBlocksFromBegin.get(currentLoc) + 1;
                                 numberOfBlocksFromBegin.put(adjacentLoc, adjacentBlocksFromStart);
                                 totalLocationCosts.put(adjacentLoc, adjacentBlocksFromStart + getManhattanDistance(adjacentLoc, end.location));
@@ -405,6 +420,31 @@ public class MissionGraph {
 
         edgePaths.get(begin).put(end, path.path);
         edgePaths.get(end).put(begin, path.path);
+
+        //add an entrance where it was made
+        if(begin.type == MissionVertexType.ROOM && end.type == MissionVertexType.ROOM) {
+            Location openedLocation = null;
+
+            BlockRange2D beginBounds = mission.getRoom(begin.name).getBounds();
+            BlockRange2D endBounds = mission.getRoom(end.name).getBounds();
+
+            for(Location loc : path.getPath()) {
+                if(beginBounds.isInRange(loc)) {
+                    if(endBounds.isInRange(loc)) {
+                        openedLocation = loc;
+                        break;
+                    }
+                } else {
+                    openedLocation = loc;
+                    break;
+                }
+            }
+
+            if(openedLocation != null) {
+                roomEntranceExitLocations.get(begin.name).add(openedLocation);
+                roomEntranceExitLocations.get(end.name).add(openedLocation);
+            }
+        }
 
         return path;
     }
@@ -595,14 +635,6 @@ public class MissionGraph {
             return true;
         }
 
-        //represents blocks that would be otherwise falsely identified as a eye-level blockage when they are indeed passable
-        //TODO: this is by no means a comprehensive list...
-        Set<Material> passableMaterials = new HashSet<>();
-        passableMaterials.add(Material.LEVER);
-        passableMaterials.add(Material.OAK_WALL_SIGN);
-        passableMaterials.add(Material.LIGHT_WEIGHTED_PRESSURE_PLATE);
-        passableMaterials.add(Material.HEAVY_WEIGHTED_PRESSURE_PLATE);
-
         LinkedList<Location> edgePath = edgePaths.get(begin).get(end);
 
         for(Location loc : edgePath) {
@@ -611,7 +643,8 @@ public class MissionGraph {
 
             //ground level and up blockage
             if(visibleBlocks.contains(loc.getBlock())) {
-                if(visibleBlocks.contains(loc.getBlock().getRelative(0, 1, 0))) {
+                Block relative = loc.getBlock().getRelative(0, 1, 0);
+                if(visibleBlocks.contains(relative) && !passableMaterials.contains(relative.getType())) {
                     MissionRoom currentRoom = null;
                     for(MissionRoom room : mission.getRooms()) {
                         if(room.getBounds().isInRange(loc)) {
@@ -625,19 +658,19 @@ public class MissionGraph {
                         return false;
                     } else {
                         //if within a room, be a little more lenient on the block checking, since there are multiple ways around a specific area
-                        if(visibleBlocks.contains(loc.getBlock().getRelative(0, 2, 0))) {
+                        relative = loc.getBlock().getRelative(0, 2, 0);
+                        if(visibleBlocks.contains(relative) && !passableMaterials.contains(relative.getType())) {
                             System.out.println("FAIL ROOM 2 above " + Utils.getFormattedLocation(loc.getBlock().getRelative(0, 2, 0).getLocation()) + " " + loc.getBlock().getRelative(0, 2, 0).getType());
                             return false;
                         }
                     }
                 }
             } else {
-                //eye level blockage
-                if (visibleBlocks.contains(loc.getBlock().getRelative(0, 1, 0))) {
-                    if(!passableMaterials.contains(loc.getBlock().getRelative(0, 1, 0).getType())) {
-                        System.out.println("FAIL EYE LEVEL " + Utils.getFormattedLocation(loc) + " " + loc.getBlock().getType());
-                        return false;
-                    }
+                //eye level blockage]
+                Block relative = loc.getBlock().getRelative(0, 1, 0);
+                if (visibleBlocks.contains(relative) && !passableMaterials.contains(relative.getType())) {
+                    System.out.println("FAIL EYE LEVEL " + Utils.getFormattedLocation(loc) + " " + loc.getBlock().getType());
+                    return false;
                 }
             }
         }

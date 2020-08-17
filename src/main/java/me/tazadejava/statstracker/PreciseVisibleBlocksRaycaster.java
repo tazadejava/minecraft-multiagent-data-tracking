@@ -1,6 +1,5 @@
 package me.tazadejava.statstracker;
 
-import me.tazadejava.actiontracker.Utils;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -27,8 +26,8 @@ public class PreciseVisibleBlocksRaycaster {
 
     class FOVBounds {
 
-        private final float FOV_HORIZONTAL_ANGLE_HALF = (float) Math.toRadians(45);//35 //increased angle for better accuracy
-        private final float FOV_VERTICAL_ANGLE_HALF = (float) Math.toRadians(53);//43 //increased angle for better accuracy
+//        private final float FOV_HORIZONTAL_ANGLE_HALF = (float) Math.toRadians(45);//35 //increased angle for better accuracy
+//        private final float FOV_VERTICAL_ANGLE_HALF = (float) Math.toRadians(53);//43 //increased angle for better accuracy
 
         private Vector playerLocation, playerDirection;
         private double angle;

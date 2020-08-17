@@ -1,10 +1,12 @@
 me/tazadejava/mission/MissionCommandHandler$5.class
 me/tazadejava/statstracker/PreciseVisibleBlocksRaycaster$1.class
 me/tazadejava/statstracker/StatsTracker.class
+me/tazadejava/mission/MissionCommandHandler$2$1.class
 me/tazadejava/statstracker/EnhancedStatsTracker$LastStatsSnapshot.class
 me/tazadejava/mission/MissionGraph$3.class
 me/tazadejava/map/DynamicMapRenderer$CustomMap.class
 me/tazadejava/statstracker/StreamlinedStatsTracker.class
+me/tazadejava/mission/MissionCommandHandler$9.class
 me/tazadejava/analyzer/PlayerAnalyzer$2.class
 me/tazadejava/mission/MissionGraph$LocationPath.class
 me/tazadejava/mission/MissionGraph$VertexPath.class

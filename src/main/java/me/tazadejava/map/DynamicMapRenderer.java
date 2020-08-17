@@ -1,7 +1,6 @@
 package me.tazadejava.map;
 
 import me.tazadejava.analyzer.PlayerAnalyzer;
-import me.tazadejava.blockranges.BlockRange2D;
 import me.tazadejava.mission.Mission;
 import me.tazadejava.mission.MissionGraph;
 import me.tazadejava.mission.MissionManager;
@@ -195,10 +194,12 @@ public class DynamicMapRenderer extends MapRenderer {
             if(i < pathSize - 1) {
                 graphics.setColor(new Color(colorIntensity, 0, colorIntensity));
                 LinkedList<Location> edgePath = graph.getExactPathBetweenEdges(bestPath.get(i).type, bestPath.get(i).name, bestPath.get(i + 1).type, bestPath.get(i + 1).name);
-                for (Location loc : edgePath) {
-                    int locX = mapOffsetX + (int) (128 * getScale(xRange, loc.getBlockX()));
-                    int locZ = mapOffsetZ + (int) (128 * getScale(zRange, loc.getBlockZ()));
-                    graphics.drawRect(locX, locZ, 1, 1);
+                if(edgePath != null) {
+                    for (Location loc : edgePath) {
+                        int locX = mapOffsetX + (int) (128 * getScale(xRange, loc.getBlockX()));
+                        int locZ = mapOffsetZ + (int) (128 * getScale(zRange, loc.getBlockZ()));
+                        graphics.drawRect(locX, locZ, 1, 1);
+                    }
                 }
             }
 

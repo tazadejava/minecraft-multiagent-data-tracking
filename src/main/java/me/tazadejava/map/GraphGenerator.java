@@ -9,12 +9,10 @@ import java.util.*;
 
 //goal: creates a graph representation of a file based on a CSV file
 
-/*
-TODO: THIS IMPLEMENTATION IS ALMOST CORRECT
-
-TOFIX:
-
-- the room boundaries are wrong when determining edges to create between rooms. check on that!
+/**
+ * Creates graphical representations used by the recommendation best path system from CSV files. Independent of any other class. Can test via the static main method in the class for effectiveness, viewing the logs for accuracy. Requires an accurate top-left coordinate XYZ of the mission in the real world to work. Assumes Y coordinate does not change.
+ *
+ * Usage within the mission environment is streamlined through the MissionCommandHandler, under the /mission import command.
  */
 public class GraphGenerator {
 
@@ -108,14 +106,6 @@ public class GraphGenerator {
             this.col = col;
         }
 
-        public int getRow() {
-            return row;
-        }
-
-        public int getCol() {
-            return col;
-        }
-
         public int[] getDelta(Point point) {
             return new int[] {row > point.row ? -1 : (row < point.row ? 1 : 0), col > point.col ? -1 : (col < point.col ? 1 : 0)};
         }
@@ -172,6 +162,20 @@ public class GraphGenerator {
             this.enclosedSpace = enclosedSpace;
             this.adjacentDoorCount = adjacentDoorCount;
         }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            EnclosedSpace that = (EnclosedSpace) o;
+            return adjacentDoorCount == that.adjacentDoorCount &&
+                    Objects.equals(enclosedSpace, that.enclosedSpace);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(enclosedSpace, adjacentDoorCount);
+        }
     }
 
     private static final int[] DIRECTION_DELTAS = {
@@ -186,7 +190,7 @@ public class GraphGenerator {
 //        generateGraphFromCSV(file, new File("/home/yoshi/Documents/GenesisUROP/test/"), -2153, 52, 153);
 
         File file = new File("/home/yoshi/Documents/GenesisUROP/OriginalMaps/falcon.csv");
-        generateGraphFromCSV(file, new File("/home/yoshi/Documents/GenesisUROP/test/"), -2109, 60, 144);
+        generateGraphFromCSV(file, new File("/home/yoshi/Documents/GenesisUROP/test/"), -2108, 60, 144);
     }
 
     //assumes CSV file
@@ -488,6 +492,17 @@ public class GraphGenerator {
             index++;
         }
 
+        System.out.println("Now determining room bounds!");
+
+        //remove the hallway from the enclosed spaces to coordinate the indices of the enclosed spaces with the room ranges
+        enclosedSpaces.remove(hallwayPoints);
+
+        List<BlockRange2D> roomRanges = new ArrayList<>();
+
+        for(Set<Point> points : enclosedSpaces) {
+            roomRanges.add(getBoundary(points));
+        }
+
         System.out.println("Now, checking for non-rectangular rooms and separating into separate rooms...");
         //TODO: this can be revised by storing multiple bounds instead of one in the future.
 
@@ -498,39 +513,127 @@ public class GraphGenerator {
 
         - ***this only works for rooms that are in an L shape of some form
 
-        - split the room into 4
-
-        - randomly expand one side for 2 corners
-
-        - put that into one room
-
-        - create a new room for the remaining corner piece
-
+        - if an L is detected, split into two rooms
          */
 
-        //TODO: IMPLEMENT THE ROOM BOUNDING
+        HashMap<BlockRange2D, Set<BlockRange2D>> connectedRooms = new HashMap<>();
 
-        System.out.println("Now determining room bounds!");
+        HashMap<EnclosedSpace, EnclosedSpace> replacementRooms = new HashMap<>();
 
-        List<BlockRange2D> roomRanges = new ArrayList<>();
+        index = 0;
+        Iterator<BlockRange2D> rangeIterator = roomRanges.iterator();
+        while(rangeIterator.hasNext()) {
+            BlockRange2D range = rangeIterator.next();
+            //points that may not be in the room
+            List<Point> suspiciousPoints = new ArrayList<>();
+            Set<Point> enclosedSpace = enclosedSpaces.get(index);
 
-        for(Set<Point> points : enclosedSpaces) {
-            if(points == hallwayPoints) {
-                continue;
+            Point[] cornerPoints = new Point[] {new Point(range.startX, range.startZ), new Point(range.startX, range.endZ),
+                    new Point(range.endX, range.startZ), new Point(range.endX, range.endZ)};
+
+            for(Point point : cornerPoints) {
+                if(!enclosedSpace.contains(point)) {
+                    suspiciousPoints.add(point);
+                }
             }
 
-            int minX = Integer.MAX_VALUE;
-            int minZ = Integer.MAX_VALUE;
-            int maxX = Integer.MIN_VALUE;
-            int maxZ = Integer.MIN_VALUE;
-            for(Point point : points) {
-                minX = Math.min(point.row, minX);
-                minZ = Math.min(point.col, minZ);
-                maxX = Math.max(point.row, maxX);
-                maxZ = Math.max(point.col, maxZ);
+            if(!suspiciousPoints.isEmpty()) {
+                for(Point suspiciousPoint : suspiciousPoints) {
+                    //not in the room, since we established it was not in the room's enclosed space
+                    if(traversedPoints.contains(suspiciousPoint)) {
+                        //we found that this room is an L, so we need to split up the room into two sections
+                        /*
+                        Process:
+                        - start from the top row, go down (X is bounded by roomBounds) until encounter walls, continue until row after is less rows than the one before by biggest amount
+                            - is an estimation of where the corner is
+                        - split above is one room, below is another room
+                         */
+
+                        int maxWallRow = range.startX;
+                        int maxWallDifference = 0;
+
+                        int previousWallCount = -1;
+
+                        for(int x = range.startX; x <= range.endX; x++) {//x is row
+                            int nonAirCount = 0;
+                            for(int z = range.startZ; z <= range.endZ; z++) {
+                                if(!mapping[x][z].isEmpty()) {
+                                    nonAirCount++;
+                                }
+                            }
+
+                            if(previousWallCount != -1) {
+                                int wallDifference = previousWallCount - nonAirCount;
+
+                                if (wallDifference > maxWallDifference) {
+                                    maxWallDifference = wallDifference;
+                                    maxWallRow = x - 1;
+                                }
+                            }
+
+                            previousWallCount = nonAirCount;
+                        }
+
+                        System.out.println("CUT AT " + maxWallRow);
+
+                        //recalculate enclosed spaces for both sides
+
+                        Set<Point> topRoomBottomBoundaries = new HashSet<>();
+
+                        for(int z = range.startZ; z <= range.endZ; z++) {
+                            topRoomBottomBoundaries.add(new Point(maxWallRow, z));
+                        }
+
+                        //get a point above this row
+                        Point topPoint = null;
+                        Point bottomPoint = null;
+                        for(Point point : enclosedSpace) {
+                            if(point.row < maxWallRow) {
+                                topPoint = point;
+                            }
+                            if(point.row > maxWallRow) {
+                                bottomPoint = point;
+                            }
+                        }
+
+                        if(topPoint == null || bottomPoint == null) {
+                            System.out.println("ERROR. SOMETHING WENT WRONG WITH FINDING THE TOP OF THE L ROOM.");
+                            break;
+                        }
+
+                        EnclosedSpace topSpace = getEnclosedSpace(topPoint, mapping, topRoomBottomBoundaries);
+                        EnclosedSpace bottomSpace = getEnclosedSpace(bottomPoint, mapping, topSpace.enclosedSpace);
+
+                        rangeIterator.remove();
+
+                        replacementRooms.put(topSpace, bottomSpace);
+
+                        break;
+                    }
+                }
             }
 
-            roomRanges.add(new BlockRange2D(minX, maxX, minZ, maxZ));
+            index++;
+        }
+
+        if(!replacementRooms.isEmpty()) {
+            for(EnclosedSpace space : replacementRooms.keySet()) {
+                EnclosedSpace complementarySpace = replacementRooms.get(space);
+
+                BlockRange2D topRoom = getBoundary(space.enclosedSpace);
+                BlockRange2D bottomRoom = getBoundary(complementarySpace.enclosedSpace);
+
+                roomRanges.add(topRoom);
+                roomRanges.add(bottomRoom);
+                adjacentDoors.add(space.adjacentDoorCount);
+                adjacentDoors.add(complementarySpace.adjacentDoorCount);
+
+                connectedRooms.putIfAbsent(topRoom, new HashSet<>());
+                connectedRooms.putIfAbsent(bottomRoom, new HashSet<>());
+
+                connectedRooms.get(topRoom).add(bottomRoom);
+                connectedRooms.get(bottomRoom).add(topRoom);
+            }
         }
 
         formatPrint(mapping);
@@ -543,8 +646,6 @@ public class GraphGenerator {
         //decision points that are 1-2 blocks away from each other will be merged to the average location
 
         List<DecisionPoint> decisionPoints = new ArrayList<>();
-
-        HashMap<BlockRange2D, Set<BlockRange2D>> connectedRooms = new HashMap<>();
 
         for(BlockRange2D roomRange : roomRanges) {
             //loop through perimeter of room, looking for doors to append decision points to
@@ -797,6 +898,21 @@ public class GraphGenerator {
         }
 
         return missionID;
+    }
+
+    private static BlockRange2D getBoundary(Set<Point> points) {
+        int minX = Integer.MAX_VALUE;
+        int minZ = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE;
+        int maxZ = Integer.MIN_VALUE;
+        for(Point point : points) {
+            minX = Math.min(point.row, minX);
+            minZ = Math.min(point.col, minZ);
+            maxX = Math.max(point.row, maxX);
+            maxZ = Math.max(point.col, maxZ);
+        }
+
+        return new BlockRange2D(minX, maxX, minZ, maxZ);
     }
 
     private static JsonObject pathToJsonObject(PointPath path, int startX, int y, int startZ) {
@@ -1227,17 +1343,6 @@ public class GraphGenerator {
 
                 if(!found) {
                     if (row[i].isEmpty()) {
-//                    index = 0;
-//                    for(Set<Point> points : enclosedSpaces) {
-//                        Point point = new Point(rowIndex, i);
-//                        if(points.contains(point)) {
-//                            System.out.print(symbols[index % symbols.length]);
-//                            found = true;
-//                            break;
-//                        }
-//                        index++;
-//                    }
-
                         if (!found) {
                             System.out.print("  ");
                         }

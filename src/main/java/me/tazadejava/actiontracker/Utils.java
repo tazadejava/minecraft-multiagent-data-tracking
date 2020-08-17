@@ -4,7 +4,6 @@ import com.google.gson.JsonObject;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 
-import java.util.HashMap;
 import java.util.UUID;
 
 //miscellaneous utility functions
