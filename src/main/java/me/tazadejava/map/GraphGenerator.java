@@ -809,6 +809,18 @@ public class GraphGenerator {
 
                 roomSpecificData.add("bounds", boundsData);
 
+                JsonArray entranceExitArray = new JsonArray();
+
+                for(int x = room.startX; x <= room.endX; x++) {
+                    for(int z = room.startZ; z <= room.endZ; z++) {
+                        if(mapping[x][z].equals("D")) {
+                            entranceExitArray.add((z + startX) + " " + y + " " + (x + startZ));
+                        }
+                    }
+                }
+
+                roomSpecificData.add("entranceExitLocations", entranceExitArray);
+
                 roomsData.add(String.valueOf(roomIndex), roomSpecificData);
 
                 roomIndex++;
