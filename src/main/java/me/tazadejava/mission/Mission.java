@@ -216,15 +216,6 @@ public class Mission {
             details.add("location", Utils.saveLocation(playerSpawnLocation));
         }
 
-        if(!decisionPoints.isEmpty()) {
-            JsonObject decisionPointsObj = new JsonObject();
-            for(Map.Entry<String, Location> entry : decisionPoints.entrySet()) {
-                Location loc = entry.getValue();
-                decisionPointsObj.addProperty(entry.getKey(), loc.getX() + " " + loc.getY() + " " + loc.getZ());
-            }
-            details.add("decisionPoints", decisionPointsObj);
-        }
-
         main.add(missionID, details);
 
         saveMissionFolderData(dataFolder, gson);
@@ -302,10 +293,18 @@ public class Mission {
         return rooms.values();
     }
 
+    /**
+     * In most cases, this graph should be retrieved. This represents the graph that includes all added and removed edges found by traversing the map.
+     * @return
+     */
     public MissionGraph getMissionGraph() {
         return currentMissionGraph;
     }
 
+    /**
+     * In most cases, this should not be modified or accessed. This represents the original graph that does not include any added or removed edges.
+     * @return
+     */
     public MissionGraph getOriginalMissionGraph() {
         return originalGraph;
     }

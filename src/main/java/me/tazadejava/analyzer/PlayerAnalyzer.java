@@ -20,6 +20,7 @@ import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scoreboard.DisplaySlot;
 import org.bukkit.scoreboard.Objective;
 import org.bukkit.scoreboard.Scoreboard;
@@ -56,6 +57,7 @@ public class PlayerAnalyzer {
 
     private Player player;
     private Mission mission;
+    private MissionManager missionManager;
 
     //TODO: these are questions that will be asked to the player before any experiment starts, obtained via data beforehand
     //TODO: this can be used with Genesis, for example, to determine if specific players need recommendations at any given time
@@ -97,9 +99,10 @@ public class PlayerAnalyzer {
 
     private static final boolean DEBUG_PRINT = false;
 
-    public PlayerAnalyzer(Player player, Mission mission, MissionManager missionManager) {
+    public PlayerAnalyzer(JavaPlugin plugin, Player player, Mission mission, MissionManager missionManager) {
         this.player = player;
         this.mission = mission;
+        this.missionManager = missionManager;
 
         victimBlocks = new ArrayList<>();
         firstLevelActions = new ArrayList<>();
@@ -117,11 +120,13 @@ public class PlayerAnalyzer {
 
         //give the player a map
         if(mission.getPlayerSpawnLocation().getWorld().getName().equals("falcon")) {
-            player.getInventory().setItemInMainHand(DynamicMapRenderer.getMap(missionManager, player, false, DynamicMapRenderer.CustomMap.FALCON));
-            player.getInventory().setItemInOffHand(DynamicMapRenderer.getMap(missionManager, player, true, DynamicMapRenderer.CustomMap.FALCON));
+//            player.getInventory().setItemInMainHand(DynamicMapRenderer.getMap(missionManager, player, false, DynamicMapRenderer.CustomMap.FALCON));
+            player.getInventory().setItemInOffHand(DynamicMapRenderer.getMap(plugin, missionManager, player, false, DynamicMapRenderer.CustomMap.FALCON));
+//            player.getInventory().setItemInOffHand(DynamicMapRenderer.getMap(missionManager, player, true, DynamicMapRenderer.CustomMap.FALCON));
         } else {
-            player.getInventory().setItemInMainHand(DynamicMapRenderer.getMap(missionManager, player, false, DynamicMapRenderer.CustomMap.SPARKY));
-            player.getInventory().setItemInOffHand(DynamicMapRenderer.getMap(missionManager, player, true, DynamicMapRenderer.CustomMap.SPARKY));
+//            player.getInventory().setItemInMainHand(DynamicMapRenderer.getMap(missionManager, player, false, DynamicMapRenderer.CustomMap.SPARKY));
+            player.getInventory().setItemInOffHand(DynamicMapRenderer.getMap(plugin, missionManager, player, false, DynamicMapRenderer.CustomMap.SPARKY));
+//            player.getInventory().setItemInOffHand(DynamicMapRenderer.getMap(missionManager, player, true, DynamicMapRenderer.CustomMap.SPARKY));
         }
     }
 
@@ -172,7 +177,15 @@ public class PlayerAnalyzer {
     //sync update
     public void updateSync() {
         //possibly recalculate edges
-        analyzeMissionGraphEdges();
+        //for methods that need raycasting
+        if(System.currentTimeMillis() - lastRaycastTime >= 200) {
+            lastRaycastTime = System.currentTimeMillis();
+
+            Set<Block> visibleBlocks = visibleBlocksRaycaster.getVisibleBlocks(player);
+
+            analyzeMissionGraphEdges(visibleBlocks);
+            analyzeVisibleVictims(visibleBlocks);
+        }
 
         if (actionBarMessage != null) {
             player.spigot().sendMessage(ChatMessageType.ACTION_BAR, actionBarMessage);
@@ -257,22 +270,51 @@ public class PlayerAnalyzer {
         lastLastStats = lastStats;
     }
 
-    //goal: use visibility algorithm to determine whether or not edges should be changed
-    private void analyzeMissionGraphEdges() {
-        if(System.currentTimeMillis() - lastRaycastTime < 200) {
-            return;
+    /**
+     * If a victim is seen and they are not yet saved, then we will add it to a list of seen victims to keep track of where victims are. This list is shared by all players, so any player can determine this
+     * @param visibleBlocks
+     */
+    private void analyzeVisibleVictims(Set<Block> visibleBlocks) {
+        MissionGraph graph = mission.getMissionGraph();
+
+        HashMap<MissionGraph.MissionVertex, Set<Block>> roomVerticesWithVictims = graph.getRoomVerticesWithVictims();
+        HashMap<MissionGraph.MissionVertex, Set<Block>> roomVerticesSavedVictims = graph.getRoomVerticesSavedVictims();
+
+        for(Block block : visibleBlocks) {
+            if(VICTIM_BLOCKS.contains(block.getType())) {
+                MissionRoom room = null;
+                if(graph.getVictimRoom(block) != null) {
+                    room = graph.getVictimRoom(block);
+                } else {
+                    for (MissionRoom possibleRoom : mission.getRooms()) {
+                        if (possibleRoom.getBounds().isInRange(block.getLocation())) {
+                            room = possibleRoom;
+                            break;
+                        }
+                    }
+
+                    if(room == null) {
+                        continue;
+                    } else {
+                        graph.defineVictimRoom(block, room);
+                    }
+                }
+
+                MissionGraph.MissionVertex roomVertex = graph.getRoomVertex(room);
+
+                if(!roomVerticesSavedVictims.containsKey(roomVertex) || !roomVerticesSavedVictims.get(roomVertex).contains(block)) {
+                    roomVerticesWithVictims.putIfAbsent(roomVertex, new HashSet<>());
+
+                    if(!roomVerticesWithVictims.get(roomVertex).contains(block)) {
+                        roomVerticesWithVictims.get(roomVertex).add(block);
+                    }
+                }
+            }
         }
-        lastRaycastTime = System.currentTimeMillis();
+    }
 
-        Set<Block> visibleBlocks = visibleBlocksRaycaster.getVisibleBlocks(player);
-
-        Material[] mats = new Material[] {Material.BLACK_STAINED_GLASS, Material.BLUE_STAINED_GLASS, Material.BROWN_STAINED_GLASS, Material.CYAN_STAINED_GLASS, Material.WHITE_STAINED_GLASS, Material.YELLOW_STAINED_GLASS, Material.RED_STAINED_GLASS, Material.GREEN_STAINED_GLASS};
-        BlockData defaultMaterial = Bukkit.getServer().createBlockData(mats[(int) (Math.random() * mats.length)]);
-        BlockData specialMaterial = Bukkit.getServer().createBlockData(Material.MAGMA_BLOCK);
-//        for (Block block : visibleBlocks) {
-//            player.sendBlockChange(block.getLocation(), defaultMaterial);
-//        }
-
+    //goal: use visibility algorithm to determine whether or not edges should be changed
+    private void analyzeMissionGraphEdges(Set<Block> visibleBlocks) {
         HashMap<MissionRoom, Set<Block>> visibleBlocksByRoom = new HashMap<>();
 
         //take out the walls
@@ -335,8 +377,6 @@ public class PlayerAnalyzer {
                             for(Block visibleBlock : visibleBlocks) {
                                 if(originalBounds.isInRange(visibleBlock.getLocation())) {
                                     if (compareBounds.isInRange(visibleBlock.getLocation())) {
-                                        player.sendBlockChange(visibleBlock.getLocation(), specialMaterial);
-
                                         boundaryBlock.add(visibleBlock);
 
                                         minX = Math.min(minX, visibleBlock.getX());
@@ -353,6 +393,7 @@ public class PlayerAnalyzer {
                             boolean doesEdgeExist = false;
 
                             Set<Block> airBlocks = new HashSet<>();
+                            Location holeLocation = null;
 
                             main:
                             for(int x = minX; x <= maxX; x++) {
@@ -376,6 +417,7 @@ public class PlayerAnalyzer {
 
                                             if(airBlocks.contains(block.getRelative(0, 1, 0)) || airBlocks.contains(block.getRelative(0, -1, 0))) {
                                                 doesEdgeExist = true;
+                                                holeLocation = block.getLocation();
                                                 break main;
                                             }
                                         }
@@ -407,12 +449,14 @@ public class PlayerAnalyzer {
                                 manhattanDistance = originalVertex.location.distance(compareVertex.location);
 
                                 if(newPath.getPathLength() < manhattanDistance * 2d) {
-                                    Bukkit.broadcastMessage("" + ChatColor.GOLD + ChatColor.BOLD + "FOUND EDGE BETWEEN ROOMS " + originalRoom.getRoomName() + " AND " + compareRoom.getRoomName() + " WITH LENGTH " + mission.getMissionGraph().getShortestPathUsingEdges(MissionGraph.MissionVertexType.ROOM, originalRoom.getRoomName(), MissionGraph.MissionVertexType.ROOM, compareRoom.getRoomName()).getPathLength());
+                                    System.out.println("" + ChatColor.GOLD + ChatColor.BOLD + "FOUND EDGE BETWEEN ROOMS " + originalRoom.getRoomName() + " AND " + compareRoom.getRoomName() + " WITH LENGTH " + mission.getMissionGraph().getShortestPathUsingEdges(MissionGraph.MissionVertexType.ROOM, originalRoom.getRoomName(), MissionGraph.MissionVertexType.ROOM, compareRoom.getRoomName()).getPathLength());
+
+                                    mission.getMissionGraph().getAddedEdgeLocationMarkers().add(holeLocation);
 
                                     //recalculate best path
                                     shouldUpdatePlayerGraph = true;
                                 } else {
-                                    Bukkit.broadcastMessage("" + ChatColor.GRAY + "Almost found an edge between " + originalRoom.getRoomName() + " AND " + compareRoom.getRoomName() + " WITH LENGTH " + mission.getMissionGraph().getShortestPathUsingEdges(MissionGraph.MissionVertexType.ROOM, originalRoom.getRoomName(), MissionGraph.MissionVertexType.ROOM, compareRoom.getRoomName()).getPathLength() + " " + (manhattanDistance * 2d));
+                                    System.out.println("" + ChatColor.GRAY + "Almost found an edge between " + originalRoom.getRoomName() + " AND " + compareRoom.getRoomName() + " WITH LENGTH " + mission.getMissionGraph().getShortestPathUsingEdges(MissionGraph.MissionVertexType.ROOM, originalRoom.getRoomName(), MissionGraph.MissionVertexType.ROOM, compareRoom.getRoomName()).getPathLength() + " " + (manhattanDistance * 2d));
                                     mission.getMissionGraph().deleteEdge(MissionGraph.MissionVertexType.ROOM, originalRoom.getRoomName(), MissionGraph.MissionVertexType.ROOM, compareRoom.getRoomName());
                                 }
                             }
@@ -425,9 +469,11 @@ public class PlayerAnalyzer {
         //check for disrupted edges due to blockages
         if(lastVertex != null) {
             for(MissionGraph.MissionVertex neighbor : mission.getMissionGraph().getNeighbors(lastVertex)) {
-                if(!mission.getMissionGraph().verifyEdgeTraversable(lastVertex.type, lastVertex.name, neighbor.type, neighbor.name, visibleBlocks)) {
-                    Bukkit.broadcastMessage("" + ChatColor.RED + ChatColor.BOLD + "THE EDGE BETWEEN " + lastVertex + " AND " + neighbor + " IS NOT TRAVERSABLE!");
+                Location loc;
+                if((loc = mission.getMissionGraph().verifyEdgeTraversable(lastVertex.type, lastVertex.name, neighbor.type, neighbor.name, visibleBlocks)) != null) {
+                    System.out.println("" + ChatColor.RED + ChatColor.BOLD + "THE EDGE BETWEEN " + lastVertex + " AND " + neighbor + " IS NOT TRAVERSABLE!");
                     mission.getMissionGraph().deleteEdge(lastVertex.type, lastVertex.name, neighbor.type, neighbor.name);
+                    mission.getMissionGraph().getRemovedEdgeLocationMarkers().add(loc);
 
                     shouldUpdatePlayerGraph = true;
                     break;
@@ -436,10 +482,9 @@ public class PlayerAnalyzer {
         }
     }
 
+    @Deprecated
     private HashMap<MissionGraph.MissionVertex, Double> calculateRoomPotentials(MissionGraph.MissionVertex playerVertex) {
         HashMap<MissionGraph.MissionVertex, Double> roomPotentials = new HashMap<>();
-
-        //TODO: IMPLEMENT ALGORITHM
 
         double maxDistanceToPlayer = 0;
         for(MissionGraph.MissionVertex room : mission.getMissionGraph().getRoomVertices()) {
@@ -523,8 +568,12 @@ public class PlayerAnalyzer {
         return roomPotentials;
     }
 
+    private List<MissionGraph.MissionVertex> calculateBestPath(MissionGraph.MissionVertex startingVertex) {
+        return calculateBestPath(startingVertex, true);
+    }
+
 //    private List<MissionGraph.MissionVertex> calculateBestPath(MissionGraph.MissionVertex playerVertex, HashMap<MissionGraph.MissionVertex, Double> roomPotentials) {
-    private List<MissionGraph.MissionVertex> calculateBestPath(MissionGraph.MissionVertex playerVertex) {
+    private List<MissionGraph.MissionVertex> calculateBestPath(MissionGraph.MissionVertex startingVertex, boolean onlyNonVisitedRooms) {
         MissionGraph graph = mission.getMissionGraph().cloneGraphOnly();
 
         //modify weights to accomodate for potential; this will allow for graph path to be weighted based on specific factors
@@ -542,14 +591,23 @@ public class PlayerAnalyzer {
         List<MissionGraph.MissionVertex> nodeCandidates = new ArrayList<>();
         HashMap<MissionGraph.MissionVertex, HashMap<MissionGraph.MissionVertex, MissionGraph.VertexPath>> roomPaths = new HashMap<>();
 
-        for(MissionGraph.MissionVertex roomVertex : graph.getRoomVertices()) {
-            if(!visitedVertices.contains(roomVertex)) {
-                nodeCandidates.add(roomVertex);
+        //first, we check if any rooms have not been visited
+        if(onlyNonVisitedRooms) {
+            for (MissionGraph.MissionVertex roomVertex : graph.getRoomVertices()) {
+                if (!visitedVertices.contains(roomVertex)) {
+                    nodeCandidates.add(roomVertex);
+                }
+            }
+        } else {
+            for(MissionGraph.MissionVertex roomVertex : graph.getRoomVertices()) {
+                if(visitedVertices.contains(roomVertex) && graph.getRoomVerticesWithVictims().containsKey(roomVertex) && !graph.getRoomVerticesWithVictims().get(roomVertex).isEmpty()) {
+                    nodeCandidates.add(roomVertex);
+                }
             }
         }
 
-        if(!nodeCandidates.contains(playerVertex)) {
-            nodeCandidates.add(playerVertex);
+        if(!nodeCandidates.contains(startingVertex)) {
+            nodeCandidates.add(startingVertex);
         }
 
         for(MissionGraph.MissionVertex beginNode : nodeCandidates) {
@@ -562,10 +620,10 @@ public class PlayerAnalyzer {
         Set<MissionGraph.MissionVertex> visitedVertices = new HashSet<>();
         List<MissionGraph.MissionVertex> roomPath = new ArrayList<>();
 
-        List<MissionGraph.MissionVertex> recursivePath = calculateBestLongTermPath(nodeCandidates, roomPaths, playerVertex);
+        List<MissionGraph.MissionVertex> recursivePath = calculateBestLongTermPath(nodeCandidates, roomPaths, startingVertex);
         if(recursivePath == null) {
-            visitedVertices.add(playerVertex);
-            roomPath.add(playerVertex);
+            visitedVertices.add(startingVertex);
+            roomPath.add(startingVertex);
         } else {
             visitedVertices.addAll(recursivePath);
             roomPath.addAll(recursivePath);
@@ -650,10 +708,21 @@ public class PlayerAnalyzer {
         if(PRINT) {
             double timeToFinish = calculatePlayerTimeToFinish(reconstructedPath, totalPathLength);
             String timeToFinishMsg;
-            if (timeToFinish != -1) {
-                timeToFinishMsg = ChatColor.YELLOW + "EST. TIME LEFT: " + ((Math.round((calculatePlayerTimeToFinish(reconstructedPath, totalPathLength) / 1000d) * 100d) / 100d)) + " seconds";
+
+            double secondsLeft = ((Math.round((calculatePlayerTimeToFinish(reconstructedPath, totalPathLength) / 1000d) * 100d) / 100d));
+
+            ChatColor timeToFinishColor;
+            //if the player does not have enough time to complete the path, the color is red
+            if(secondsLeft > missionManager.getMissionSecondsLeft()) {
+                timeToFinishColor = ChatColor.RED;
             } else {
-                timeToFinishMsg = ChatColor.YELLOW + "EST. TIME LEFT: ...";
+                timeToFinishColor = ChatColor.YELLOW;
+            }
+
+            if (timeToFinish != -1) {
+                timeToFinishMsg = timeToFinishColor + "EST. TIME LEFT: " + secondsLeft + " seconds";
+            } else {
+                timeToFinishMsg = timeToFinishColor + "EST. TIME LEFT: ...";
             }
 
             if(DEBUG_PRINT) {
@@ -822,6 +891,12 @@ public class PlayerAnalyzer {
 
 //                HashMap<MissionGraph.MissionVertex, Double> roomPotentials = calculateRoomPotentials(playerVertex);
                 List<MissionGraph.MissionVertex> bestPath = calculateBestPath(playerVertex);
+
+                //append that with the best path of visited rooms
+                if(!bestPath.isEmpty()) {
+                    bestPath.addAll(calculateBestPath(bestPath.get(bestPath.size() - 1), true));
+                }
+
                 lastBestPath = bestPath;
 
                 bestPathFormat = new ArrayList<>();
@@ -1083,8 +1158,26 @@ public class PlayerAnalyzer {
         for(Material victimMat : VICTIM_BLOCKS) {
             if(deltaStats.lastPlayerBlocksBroken.containsKey(victimMat.toString().toLowerCase())) {
                 //ASSUMPTION: PLAYER CAN ONLY BREAK ONE BLOCK IN ONE TICK'S TIME (don't think this can be violated in any way)
-                int victimNumber = victimBlocks.indexOf(deltaStats.lastPlayerBlocksBrokenLocations.get(0));
+                Location loc = deltaStats.lastPlayerBlocksBrokenLocations.get(0);
+                Block block = loc.getBlock();
+                int victimNumber = victimBlocks.indexOf(loc);
                 log(player.getName() + " saved victim " + victimNumber + ".");
+
+                //if the player digs a victim, then make sure we log it as being saved!
+                MissionGraph graph = mission.getMissionGraph();
+                HashMap<MissionGraph.MissionVertex, Set<Block>> roomVerticesWithVictims = graph.getRoomVerticesWithVictims();
+                HashMap<MissionGraph.MissionVertex, Set<Block>> roomVerticesSavedVictims = graph.getRoomVerticesSavedVictims();
+                MissionRoom room = graph.getVictimRoom(block);
+                if(room != null) {
+                    MissionGraph.MissionVertex roomVertex = graph.getRoomVertex(room);
+
+                    if (roomVerticesWithVictims.containsKey(roomVertex)) {
+                        roomVerticesWithVictims.get(roomVertex).remove(block);
+
+                        roomVerticesSavedVictims.putIfAbsent(roomVertex, new HashSet<>());
+                        roomVerticesSavedVictims.get(roomVertex).add(block);
+                    }
+                }
 
                 savedVictim = true;
                 break;
@@ -1139,6 +1232,14 @@ public class PlayerAnalyzer {
 
     public Player getPlayer() {
         return player;
+    }
+
+    /**
+     *
+     * @return The last vertex that the player has been on. Can be null!
+     */
+    public MissionGraph.MissionVertex getLastVertex() {
+        return lastVertex;
     }
 
     public List<MissionGraph.MissionVertex> getLastBestPath() {

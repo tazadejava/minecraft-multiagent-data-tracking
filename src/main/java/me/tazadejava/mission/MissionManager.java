@@ -10,7 +10,9 @@ import me.tazadejava.map.GraphGenerator;
 import me.tazadejava.statstracker.EnhancedStatsTracker;
 import me.tazadejava.statstracker.StatsTracker;
 import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
 import org.bukkit.Location;
+import org.bukkit.attribute.Attribute;
 import org.bukkit.boss.BarColor;
 import org.bukkit.boss.BarStyle;
 import org.bukkit.boss.BossBar;
@@ -23,6 +25,8 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 //handles the mission data tracking
@@ -47,9 +51,13 @@ public class MissionManager {
 
     private BukkitRunnable syncTimer, asyncTimer;
 
+    private int missionSecondsLeft;
+
     public MissionManager(JavaPlugin plugin, MissionEventListener listener) {
         this.plugin = plugin;
         this.listener = listener;
+
+        this.listener.setMissionManager(this);
 
         gson = new GsonBuilder().setPrettyPrinting().create();
 
@@ -173,7 +181,12 @@ public class MissionManager {
         for(Player p : statsTracker.getPlayerList()) {
             countdown.addPlayer(p);
 
-            playerAnalyzers.add(new PlayerAnalyzer(p, mission, this));
+            playerAnalyzers.add(new PlayerAnalyzer(plugin, p, mission, this));
+
+            p.setExp(0);
+            p.setLevel(0);
+            p.setHealth(p.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
+            p.setFoodLevel(20);
 
             p.teleport(mission.getPlayerSpawnLocation());
         }
@@ -193,9 +206,9 @@ public class MissionManager {
 
                 count++;
                 if(count % 20 == 0) {
-                    int secondsLeft = (duration - (count / 20));
-                    countdown.setTitle("Time left: " + secondsLeft + " second" + (secondsLeft == 1 ? "" : "s"));
-                    double progress = (double) secondsLeft / duration;
+                    missionSecondsLeft = (duration - (count / 20));
+                    countdown.setTitle("Time left: " + missionSecondsLeft + " second" + (missionSecondsLeft == 1 ? "" : "s"));
+                    double progress = (double) missionSecondsLeft / duration;
                     countdown.setProgress(progress);
 
                     if(progress <= .2 && countdown.getColor() == BarColor.BLUE) {
@@ -243,6 +256,10 @@ public class MissionManager {
         return true;
     }
 
+    public int getMissionSecondsLeft() {
+        return missionSecondsLeft;
+    }
+
     public boolean doesMissionExist(String mission) {
         return missions.containsKey(mission.toLowerCase());
     }
@@ -260,8 +277,9 @@ public class MissionManager {
     }
 
     private void endMission(boolean saveLog) {
+        String filename = null;
         if(saveLog) {
-            saveLog();
+            filename = saveLog();
         }
 
         missionInProgress = false;
@@ -277,6 +295,9 @@ public class MissionManager {
         }
 
         missionInitiator.sendMessage("The mission has ended!");
+        if(filename != null) {
+            missionInitiator.sendMessage(ChatColor.GRAY + "A log has been saved under rawData/" + filename + ".txt!");
+        }
     }
 
     public JsonObject getJsonLog() {
@@ -305,25 +326,23 @@ public class MissionManager {
         return null;
     }
 
-    private void saveLog() {
+    private String saveLog() {
         File dataFolder = new File(plugin.getDataFolder().getAbsolutePath() + "/rawData/");
-        File dataLog = new File(dataFolder.getAbsolutePath() + "/log.txt");
+
+        String logName = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME).replace(":", "-");
+
+        File dataLog = new File(dataFolder.getAbsolutePath() + "/" + logName + ".txt");
 
         try {
-            if(!dataLog.exists()) {
-                dataLog.createNewFile();
-            } else {
-                //TODO: CHANGE THIS TO DATESTAMPS INSTEAD
-                dataLog.delete();
-                dataLog.createNewFile();
-            }
-
+            dataLog.createNewFile();
             FileWriter fileWriter = new FileWriter(dataLog);
             gson.toJson(jsonLog, fileWriter);
             fileWriter.close();
         } catch (IOException e) {
             e.printStackTrace();
         }
+
+        return logName;
     }
 
     public void onDisable() {

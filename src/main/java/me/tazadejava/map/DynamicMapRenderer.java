@@ -8,18 +8,19 @@ import me.tazadejava.mission.MissionRoom;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.MapMeta;
 import org.bukkit.map.*;
+import org.bukkit.plugin.java.JavaPlugin;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.LinkedList;
+import java.io.*;
+import java.util.*;
 import java.util.List;
 
 public class DynamicMapRenderer extends MapRenderer {
@@ -28,6 +29,7 @@ public class DynamicMapRenderer extends MapRenderer {
         FALCON, SPARKY;
     }
 
+    private JavaPlugin plugin;
     private MissionManager manager;
     private Player player;
 
@@ -40,46 +42,197 @@ public class DynamicMapRenderer extends MapRenderer {
 
     private int[] xRange, zRange;
 
-    private DynamicMapRenderer(MissionManager missionManager, Player player, boolean showRoomAndDecisionLabels, CustomMap map) {
+    //choose to either use the map image that has all the answers or use a unpopulated map
+    private final boolean USE_ANSWER_MAP = false;
+
+    //variables used only if not using the answer map
+    private String[][] mapping;
+
+    private DynamicMapRenderer(JavaPlugin plugin, MissionManager missionManager, Player player, boolean showRoomAndDecisionLabels, CustomMap map) {
+        this.plugin = plugin;
         this.manager = missionManager;
         this.player = player;
         this.showRoomAndDecisionLabels = showRoomAndDecisionLabels;
 
         switch(map) {
             case SPARKY:
-                try {
-                    InputStream stream = getClass().getClassLoader().getResourceAsStream("sparky_map.png");
-                    mapImage = ImageIO.read(stream);
-                    stream.close();
-                } catch (IOException e) {
-                    e.printStackTrace();
+                if(USE_ANSWER_MAP) {
+                    try {
+                        InputStream stream = getClass().getClassLoader().getResourceAsStream("sparky_map.png");
+                        mapImage = ImageIO.read(stream);
+                        stream.close();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+
+                    xRange = new int[]{-2154, -2105};
+                    zRange = new int[]{152, 199};
+                } else {
+                    setMapImageFromCSV("sparky.csv", -2153, 153);
                 }
 
-                xRange = new int[] {-2154, -2105};
-                zRange = new int[] {152, 199};
                 break;
             case FALCON:
-                try {
-                    InputStream stream = getClass().getClassLoader().getResourceAsStream("falcon_map.png");
-                    mapImage = ImageIO.read(stream);
-                    stream.close();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
+                if(USE_ANSWER_MAP) {
+                    try {
+                        InputStream stream = getClass().getClassLoader().getResourceAsStream("falcon_map.png");
+                        mapImage = ImageIO.read(stream);
+                        stream.close();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
 
-                xRange = new int[] {-2109, -2020};
-                zRange = new int[] {144, 192};
+                    xRange = new int[]{-2109, -2020};
+                    zRange = new int[]{144, 192};
+                } else {
+                    setMapImageFromCSV("falcon.csv", -2108, 144);
+                }
                 break;
         }
     }
 
-    public static ItemStack getMap(MissionManager missionManager, Player player, boolean showRoomAndDecisionLabels, CustomMap mapType) {
+    private void defineMapping(String name) {
+        List<String[]> lines = new ArrayList<>();
+
+        try {
+            BufferedReader reader = new BufferedReader(new InputStreamReader(getClass().getClassLoader().getResourceAsStream(name)));
+
+            String read;
+            while((read = reader.readLine()) != null) {
+                List<String> line = new ArrayList<>();
+                int startIndex = 0;
+                int currentIndex = 0;
+                for(char val : read.toCharArray()) {
+                    if(val == ',') {
+                        line.add(read.substring(startIndex, currentIndex));
+                        startIndex = currentIndex + 1;
+                    }
+                    currentIndex++;
+                }
+
+                if(startIndex <= read.length()) {
+                    line.add(read.substring(startIndex, currentIndex));
+                }
+
+                //put border around left and right
+                line.add(0, "B");
+                line.add("B");
+
+                lines.add(line.toArray(new String[0]));
+            }
+
+            reader.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        String[] row = new String[lines.get(0).length];
+        Arrays.fill(row, "B");
+
+        lines.add(0, row);
+        lines.add(row);
+
+        mapping = lines.toArray(new String[0][0]);
+    }
+
+    private BufferedImage getScaledImage(int width, int height, BufferedImage originalImage) {
+        BufferedImage scaledImage = new BufferedImage(width, height, originalImage.getType());
+        Graphics2D graphics = scaledImage.createGraphics();
+
+        //draw scaled version
+        graphics.drawImage(originalImage, 0, 0, scaledImage.getWidth(), scaledImage.getHeight(), 0, 0, originalImage.getWidth(), originalImage.getHeight(), null);
+
+        graphics.dispose();
+
+        return scaledImage;
+    }
+
+    private void setMapImageFromCSV(String name, int startX, int startZ) {
+        //adjust for manual border
+        startX -= 1;
+        startZ -= 1;
+
+        if(mapping == null) {
+            defineMapping(name);
+        }
+
+        //need to map this to a 128 by 128 image
+        //scale the mapping somehow???
+
+        BufferedImage originalImage = new BufferedImage(mapping[0].length, mapping.length, BufferedImage.TYPE_INT_ARGB);
+
+        Graphics2D graphics = originalImage.createGraphics();
+
+        for(int r = 0; r < mapping.length; r++) {
+            for(int c = 0; c < mapping[r].length; c++) {
+                String val = mapping[r][c];
+
+                int color;
+                if(val.isEmpty()) {
+                    color = Color.WHITE.getRGB();
+                } else {
+                    switch(val) {
+                        case "D":
+                            color = Color.GREEN.getRGB();
+                            break;
+                        default:
+                            color = Color.BLACK.getRGB();
+                            break;
+                    }
+                }
+                originalImage.setRGB(c, r, color);
+            }
+        }
+
+        graphics.dispose();
+
+        mapImage = getScaledImage(128, 128, originalImage);
+
+        xRange = new int[] {startX, startX + originalImage.getWidth()};
+        zRange = new int[] {startZ, startZ + originalImage.getHeight()};
+    }
+
+    /**
+     * Should run async to not lag the server. Will check for created and deleted edges, and update mapping accordingly.
+     */
+//    private void updateMappingImage() {
+//        BufferedImage originalImage = new BufferedImage(mapping[0].length, mapping.length, BufferedImage.TYPE_INT_ARGB);
+//
+//        Graphics2D graphics = originalImage.createGraphics();
+//
+//        for(int r = 0; r < mapping.length; r++) {
+//            for(int c = 0; c < mapping[r].length; c++) {
+//                String val = mapping[r][c];
+//
+//                int color;
+//                if(val.isEmpty()) {
+//                    color = Color.WHITE.getRGB();
+//                } else {
+//                    switch(val) {
+//                        case "D":
+//                            color = Color.GREEN.getRGB();
+//                            break;
+//                        default:
+//                            color = Color.BLACK.getRGB();
+//                            break;
+//                    }
+//                }
+//                originalImage.setRGB(c, r, color);
+//            }
+//        }
+//
+//        graphics.dispose();
+//
+//        mapImage = getScaledImage(128, 128, originalImage);
+//    }
+
+    public static ItemStack getMap(JavaPlugin plugin, MissionManager missionManager, Player player, boolean showRoomAndDecisionLabels, CustomMap mapType) {
         MapView map = Bukkit.createMap(Bukkit.getWorlds().get(0));
         map.getRenderers().clear();
         map.setLocked(true);
         map.setUnlimitedTracking(false);
         map.setScale(MapView.Scale.NORMAL);
-        map.addRenderer(new DynamicMapRenderer(missionManager, player, showRoomAndDecisionLabels, mapType));
+        map.addRenderer(new DynamicMapRenderer(plugin, missionManager, player, showRoomAndDecisionLabels, mapType));
 
         ItemStack mapItem = new ItemStack(Material.FILLED_MAP);
         MapMeta meta = (MapMeta) mapItem.getItemMeta();
@@ -91,9 +244,12 @@ public class DynamicMapRenderer extends MapRenderer {
 
     @Override
     public void render(MapView map, MapCanvas canvas, Player player) {
-        //block range:
-        //X: -2154 to -2105
-        //Z: 152 to 199
+//        new BukkitRunnable() {
+//            @Override
+//            public void run() {
+//                updateMappingImage();
+//            }
+//        }.runTaskAsynchronously(plugin);
 
         double playerScaleX = getScale(xRange, player.getLocation().getBlockX());
         double playerScaleZ = getScale(zRange, player.getLocation().getBlockZ());
@@ -165,9 +321,15 @@ public class DynamicMapRenderer extends MapRenderer {
         }
 
         if(showRoomAndDecisionLabels) {
-            drawDecisionAndRoomLabels(graphics, mapOffsetX, mapOffsetZ);
+            drawDecisionAndRoomLabels(graphics, mapOffsetX, mapOffsetZ, width, height);
             return;
         }
+
+        //draw rooms with victims in them that the player missed!
+        drawLeftVictimRooms(graphics, mapOffsetX, mapOffsetZ, width, height);
+
+        //draw added and removed edges
+        drawAddedRemovedEdges(graphics, mapOffsetX, mapOffsetZ, width, height);
 
         List<MissionGraph.MissionVertex> bestPath = analyzer.getLastBestPath();
 
@@ -187,8 +349,8 @@ public class DynamicMapRenderer extends MapRenderer {
             colorIntensity = (int) (255 * Math.pow(((double) (pathSize - i) / (pathSize)), 2));
             iconSize = (int) (5 * ((double) (pathSize - i) / (pathSize))) + 3;
 
-            int x = mapOffsetX + (int) (128 * getScale(xRange, nextVertex.location.getBlockX()));
-            int z = mapOffsetZ + (int) (128 * getScale(zRange, nextVertex.location.getBlockZ()));
+            int x = mapOffsetX + (int) (width * getScale(xRange, nextVertex.location.getBlockX()));
+            int z = mapOffsetZ + (int) (height * getScale(zRange, nextVertex.location.getBlockZ()));
 
             //draw edge path
             if(i < pathSize - 1) {
@@ -196,8 +358,8 @@ public class DynamicMapRenderer extends MapRenderer {
                 LinkedList<Location> edgePath = graph.getExactPathBetweenEdges(bestPath.get(i).type, bestPath.get(i).name, bestPath.get(i + 1).type, bestPath.get(i + 1).name);
                 if(edgePath != null) {
                     for (Location loc : edgePath) {
-                        int locX = mapOffsetX + (int) (128 * getScale(xRange, loc.getBlockX()));
-                        int locZ = mapOffsetZ + (int) (128 * getScale(zRange, loc.getBlockZ()));
+                        int locX = mapOffsetX + (int) (width * getScale(xRange, loc.getBlockX()));
+                        int locZ = mapOffsetZ + (int) (height * getScale(zRange, loc.getBlockZ()));
                         graphics.drawRect(locX, locZ, 1, 1);
                     }
                 }
@@ -209,13 +371,67 @@ public class DynamicMapRenderer extends MapRenderer {
         }
     }
 
-    private void drawDecisionAndRoomLabels(Graphics2D graphics, int mapOffsetX, int mapOffsetZ) {
+    /**
+     * Draws red boxes around rooms where victims exist
+     * @param graphics
+     * @param mapOffsetX
+     * @param mapOffsetZ
+     */
+    private void drawLeftVictimRooms(Graphics2D graphics, int mapOffsetX, int mapOffsetZ, int width, int height) {
+        MissionGraph graph = mission.getMissionGraph();
+
+        HashMap<MissionGraph.MissionVertex, Set<Block>> roomsWithVictims = graph.getRoomVerticesWithVictims();
+
+        graphics.setColor(new Color(255, 0, 0, 128));
+
+        for(MissionGraph.MissionVertex roomVertex : roomsWithVictims.keySet()) {
+            if(analyzer.getLastVertex() != null && analyzer.getLastVertex().equals(roomVertex)) {
+                //don't indicate that a victim is still in this room until we leave the room!
+                continue;
+            }
+
+            if(!roomsWithVictims.get(roomVertex).isEmpty()) {
+                MissionRoom room = mission.getRoom(roomVertex.name);
+
+                int startX = mapOffsetX + (int) (width * getScale(xRange, room.getBounds().startX));
+                int startZ = mapOffsetZ + (int) (height * getScale(zRange, room.getBounds().startZ));
+                int endX = mapOffsetX + (int) (width * getScale(xRange, room.getBounds().endX));
+                int endZ = mapOffsetZ + (int) (height * getScale(zRange, room.getBounds().endZ));
+
+                graphics.fillRect(startX, startZ, endX - startX, endZ - startZ);
+            }
+        }
+    }
+
+    private void drawAddedRemovedEdges(Graphics2D graphics, int mapOffsetX, int mapOffsetZ, int width, int height) {
+        MissionGraph graph = mission.getMissionGraph();
+
+        graphics.setFont(new Font("Arial", Font.BOLD, 14));
+
+        graphics.setColor(Color.GREEN);
+        for(Location loc : graph.getAddedEdgeLocationMarkers()) {
+            int startX = mapOffsetX + (int) (width * getScale(xRange, loc.getBlockX()));
+            int startZ = mapOffsetZ + (int) (height * getScale(zRange, loc.getBlockZ()));
+
+            graphics.drawOval(startX, startZ, 8, 8);
+        }
+
+        graphics.setColor(Color.RED);
+        for(Location loc : graph.getRemovedEdgeLocationMarkers()) {
+            int startX = mapOffsetX + (int) (width * getScale(xRange, loc.getBlockX()));
+            int startZ = mapOffsetZ + (int) (height * getScale(zRange, loc.getBlockZ()));
+
+            graphics.drawString("X", startX, startZ);
+        }
+    }
+
+    private void drawDecisionAndRoomLabels(Graphics2D graphics, int mapOffsetX, int mapOffsetZ, int width, int height) {
         //draw decision and room circles
         graphics.setColor(Color.ORANGE);
         int ovalSize = 6;
         for(MissionRoom room : mission.getRooms()) {
-            int locX = mapOffsetX + (int) (128 * getScale(xRange, (room.getBounds().getRangeX()[1] + room.getBounds().getRangeX()[0]) / 2));
-            int locZ = mapOffsetZ + (int) (128 * getScale(zRange, (room.getBounds().getRangeZ()[1] + room.getBounds().getRangeZ()[0]) / 2));
+            int locX = mapOffsetX + (int) (width * getScale(xRange, (room.getBounds().getRangeX()[1] + room.getBounds().getRangeX()[0]) / 2));
+            int locZ = mapOffsetZ + (int) (height * getScale(zRange, (room.getBounds().getRangeZ()[1] + room.getBounds().getRangeZ()[0]) / 2));
 
             graphics.fillOval(locX - (ovalSize / 2), locZ - (ovalSize / 2), ovalSize, ovalSize);
         }
@@ -223,8 +439,8 @@ public class DynamicMapRenderer extends MapRenderer {
         for(String decisionPoint : mission.getDecisionPoints().keySet()) {
             Location loc = mission.getDecisionPoints().get(decisionPoint);
 
-            int locX = mapOffsetX + (int) (128 * getScale(xRange, loc.getBlockX()));
-            int locZ = mapOffsetZ + (int) (128 * getScale(zRange, loc.getBlockZ()));
+            int locX = mapOffsetX + (int) (width * getScale(xRange, loc.getBlockX()));
+            int locZ = mapOffsetZ + (int) (height * getScale(zRange, loc.getBlockZ()));
 
             graphics.fillOval(locX - (ovalSize / 2), locZ - (ovalSize / 2), ovalSize, ovalSize);
         }
@@ -239,8 +455,8 @@ public class DynamicMapRenderer extends MapRenderer {
 
             Rectangle2D textBounds = font.getStringBounds(text, graphics);
 
-            int locX = mapOffsetX + (int) (128 * getScale(xRange, (room.getBounds().getRangeX()[1] + room.getBounds().getRangeX()[0]) / 2));
-            int locZ = mapOffsetZ + (int) (128 * getScale(zRange, (room.getBounds().getRangeZ()[1] + room.getBounds().getRangeZ()[0]) / 2));
+            int locX = mapOffsetX + (int) (width * getScale(xRange, (room.getBounds().getRangeX()[1] + room.getBounds().getRangeX()[0]) / 2));
+            int locZ = mapOffsetZ + (int) (height * getScale(zRange, (room.getBounds().getRangeZ()[1] + room.getBounds().getRangeZ()[0]) / 2));
 
             graphics.drawString(text, locX - (int) (textBounds.getWidth() / 2), locZ - (int) (textBounds.getHeight() / 2) + font.getAscent());
         }
@@ -251,8 +467,8 @@ public class DynamicMapRenderer extends MapRenderer {
 
             Location loc = mission.getDecisionPoints().get(decisionPoint);
 
-            int locX = mapOffsetX + (int) (128 * getScale(xRange, loc.getBlockX()));
-            int locZ = mapOffsetZ + (int) (128 * getScale(zRange, loc.getBlockZ()));
+            int locX = mapOffsetX + (int) (width * getScale(xRange, loc.getBlockX()));
+            int locZ = mapOffsetZ + (int) (height * getScale(zRange, loc.getBlockZ()));
 
             graphics.drawString(decisionPoint, locX - (int) (textBounds.getWidth() / 2), locZ - (int) (textBounds.getHeight() / 2) + font.getAscent());
         }

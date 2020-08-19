@@ -121,6 +121,12 @@ public class MissionGraph {
     //represents edges that have been verified to be traversable
     private HashMap<MissionVertex, Set<MissionVertex>> verifiedEdges = new HashMap<>();
 
+    //added and removed edges; tracker to keep track of where edges are created and destroyed
+    private Set<Location> addedEdgeLocationMarkers = new HashSet<>();
+    private Set<Location> removedEdgeLocationMarkers = new HashSet<>();
+
+    private HashMap<Block, MissionRoom> victimRooms = new HashMap<>();
+    private HashMap<MissionGraph.MissionVertex, Set<Block>> roomVerticesWithVictims = new HashMap<>(), roomVerticesSavedVictims = new HashMap<>();
 
     public MissionGraph(Mission mission) {
         this.mission = mission;
@@ -181,6 +187,18 @@ public class MissionGraph {
 
         for(String roomName : roomEntranceExitLocations.keySet()) {
             graph.roomEntranceExitLocations.put(roomName, new HashSet<>(roomEntranceExitLocations.get(roomName)));
+        }
+
+        for(Block block : victimRooms.keySet()) {
+            graph.victimRooms.put(block, victimRooms.get(block));
+        }
+
+        for(MissionVertex roomVertex : roomVerticesWithVictims.keySet()) {
+            roomVerticesWithVictims.put(roomVertex, new HashSet<>(roomVerticesWithVictims.get(roomVertex)));
+        }
+
+        for(MissionVertex roomVertex : roomVerticesSavedVictims.keySet()) {
+            roomVerticesSavedVictims.put(roomVertex, new HashSet<>(roomVerticesSavedVictims.get(roomVertex)));
         }
 
         for(MissionVertex vertex : edges.keySet()) {
@@ -625,14 +643,14 @@ public class MissionGraph {
      * @param type2
      * @param name2
      * @param visibleBlocks
-     * @return True if edge is traversable, false if there is something blocking the edge from letting the player go through
+     * @return null if edge is traversable, the blocking location if there is something blocking the edge from letting the player go through
      */
-    public boolean verifyEdgeTraversable(MissionVertexType type1, String name1, MissionVertexType type2, String name2, Set<Block> visibleBlocks) {
+    public Location verifyEdgeTraversable(MissionVertexType type1, String name1, MissionVertexType type2, String name2, Set<Block> visibleBlocks) {
         MissionVertex begin = getVertex(type1, name1);
         MissionVertex end = getVertex(type2, name2);
 
         if(verifiedEdges.containsKey(begin) && verifiedEdges.get(begin).contains(end)) {
-            return true;
+            return null;
         }
 
         LinkedList<Location> edgePath = edgePaths.get(begin).get(end);
@@ -655,13 +673,13 @@ public class MissionGraph {
 
                     if(currentRoom == null) {
                         System.out.println("FAIL HALLWAY GROUND " + Utils.getFormattedLocation(loc) + " " + loc.getBlock().getType());
-                        return false;
+                        return loc;
                     } else {
                         //if within a room, be a little more lenient on the block checking, since there are multiple ways around a specific area
                         relative = loc.getBlock().getRelative(0, 2, 0);
                         if(visibleBlocks.contains(relative) && !passableMaterials.contains(relative.getType())) {
                             System.out.println("FAIL ROOM 2 above " + Utils.getFormattedLocation(loc.getBlock().getRelative(0, 2, 0).getLocation()) + " " + loc.getBlock().getRelative(0, 2, 0).getType());
-                            return false;
+                            return loc;
                         }
                     }
                 }
@@ -670,12 +688,12 @@ public class MissionGraph {
                 Block relative = loc.getBlock().getRelative(0, 1, 0);
                 if (visibleBlocks.contains(relative) && !passableMaterials.contains(relative.getType())) {
                     System.out.println("FAIL EYE LEVEL " + Utils.getFormattedLocation(loc) + " " + loc.getBlock().getType());
-                    return false;
+                    return loc;
                 }
             }
         }
 
-        return true;
+        return null;
     }
 
     /**
@@ -758,8 +776,41 @@ public class MissionGraph {
         return roomVertices.values();
     }
 
+    public MissionVertex getRoomVertex(MissionRoom room) {
+        return roomVertices.get(room.getRoomName());
+    }
+
+    public void defineVictimRoom(Block block, MissionRoom room) {
+        victimRooms.put(block, room);
+    }
+
+    /**
+     *
+     * @param block
+     * @return MissionRoom if it exists, or null otherwise
+     */
+    public MissionRoom getVictimRoom(Block block) {
+        return victimRooms.containsKey(block) ? victimRooms.get(block) : null;
+    }
+
+    public HashMap<MissionVertex, Set<Block>> getRoomVerticesWithVictims() {
+        return roomVerticesWithVictims;
+    }
+
+    public HashMap<MissionVertex, Set<Block>> getRoomVerticesSavedVictims() {
+        return roomVerticesSavedVictims;
+    }
+
     public void clearAllEdges() {
         edges.clear();
         edgeWeights.clear();
+    }
+
+    public Set<Location> getAddedEdgeLocationMarkers() {
+        return addedEdgeLocationMarkers;
+    }
+
+    public Set<Location> getRemovedEdgeLocationMarkers() {
+        return removedEdgeLocationMarkers;
     }
 }

@@ -9,6 +9,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.entity.FoodLevelChangeEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 
 import java.util.ArrayList;
@@ -17,6 +18,8 @@ import java.util.List;
 
 //tracks player data while the mission is active
 public class MissionEventListener implements Listener {
+
+    private MissionManager missionManager;
 
     private HashMap<Player, Integer> doorsOpened;
     private HashMap<Player, Integer> firesExtinguished;
@@ -30,6 +33,10 @@ public class MissionEventListener implements Listener {
         blocksBrokenLocations = new HashMap<>();
     }
 
+    public void setMissionManager(MissionManager missionManager) {
+        this.missionManager = missionManager;
+    }
+
     public void initMission(List<Player> players) {
         doorsOpened.clear();
         firesExtinguished.clear();
@@ -41,6 +48,25 @@ public class MissionEventListener implements Listener {
             firesExtinguished.put(p, 0);
             blocksBroken.put(p, new HashMap<>());
             blocksBrokenLocations.put(p, new ArrayList<>());
+        }
+    }
+
+    //simulate the XP from breaking blocks
+    @EventHandler
+    public void onBreak(BlockBreakEvent event) {
+        if(missionManager.getCurrentMission() != null && missionManager.isMissionInProgress(missionManager.getCurrentMission())) {
+            if(event.getBlock().getType() == Material.GOLD_BLOCK) {
+                event.getPlayer().setLevel(event.getPlayer().getLevel() + 25);
+            } else if(event.getBlock().getType() == Material.PRISMARINE) {
+                event.getPlayer().setLevel(event.getPlayer().getLevel() + 10);
+            }
+        }
+    }
+
+    @EventHandler
+    public void onFoodLevelChange(FoodLevelChangeEvent event) {
+        if(missionManager.getCurrentMission() != null && missionManager.isMissionInProgress(missionManager.getCurrentMission())) {
+            event.setFoodLevel(20);
         }
     }
 
