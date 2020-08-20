@@ -6,7 +6,6 @@ me/tazadejava/statstracker/EnhancedStatsTracker$LastStatsSnapshot.class
 me/tazadejava/mission/MissionGraph$3.class
 me/tazadejava/map/DynamicMapRenderer$CustomMap.class
 me/tazadejava/statstracker/StreamlinedStatsTracker.class
-me/tazadejava/mission/MissionCommandHandler$9.class
 me/tazadejava/mission/MissionGraph$LocationPath.class
 me/tazadejava/mission/MissionGraph$VertexPath.class
 me/tazadejava/mission/Mission$1.class

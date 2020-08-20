@@ -12,6 +12,9 @@ import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
 
+/**
+ * Simple map overlay renderer that will only show the player on the map without rotating or translating the map. Does not include any overlay features like in the DynamicMapRenderer. Currently only works with Sparky map.
+ */
 public class MapOverlayRenderer extends MapRenderer {
 
     public static ItemStack getMap() {

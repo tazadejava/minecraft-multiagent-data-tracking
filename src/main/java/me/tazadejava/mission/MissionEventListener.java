@@ -17,6 +17,10 @@ import java.util.HashMap;
 import java.util.List;
 
 //tracks player data while the mission is active
+
+/**
+ * Tracks player actions while the mission is active to store into stats.
+ */
 public class MissionEventListener implements Listener {
 
     private MissionManager missionManager;
@@ -51,7 +55,10 @@ public class MissionEventListener implements Listener {
         }
     }
 
-    //simulate the XP from breaking blocks
+    /**
+     * Will give XP to players for breaking victim blocks.
+     * @param event
+     */
     @EventHandler
     public void onBreak(BlockBreakEvent event) {
         if(missionManager.getCurrentMission() != null && missionManager.isMissionInProgress(missionManager.getCurrentMission())) {
@@ -63,6 +70,10 @@ public class MissionEventListener implements Listener {
         }
     }
 
+    /**
+     * Prevents players from dying from hunger.
+     * @param event
+     */
     @EventHandler
     public void onFoodLevelChange(FoodLevelChangeEvent event) {
         if(missionManager.getCurrentMission() != null && missionManager.isMissionInProgress(missionManager.getCurrentMission())) {

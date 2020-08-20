@@ -33,10 +33,12 @@ import org.bukkit.util.Vector;
 import java.io.*;
 import java.util.*;
 
-//handles the player's commands to pass to the MissionHandler class
+/**
+ * Command manager that allows the player to start commands (particularly, start the mission) and other various options.
+ */
 public class MissionCommandHandler implements CommandExecutor, TabCompleter {
 
-    private static final String GENERIC_IMPROPER_COMMAND_MESSAGE = "Improper command. Usage: /mission <create/start/abort/list/set/add/getitem> [command-specific arguments]";
+    private static final String GENERIC_IMPROPER_COMMAND_MESSAGE = "Improper command. Usage: /mission <create/start/abort/list/set/add/getitem/room/world/info> [command-specific arguments]";
 
     private final ActionTrackerPlugin plugin;
     private final MissionManager missionManager;
@@ -45,7 +47,6 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
 
     private HashMap<Location, BlockState> lastBlockState = new HashMap<>();
     private HashMap<Location, Player> blockPlayer = new HashMap<>();
-    private Set<Material> excludedTransformations = new HashSet<>();
 
     private HashMap<Player, MissionRoom> roomBuilderRooms = new HashMap<>();
     private HashMap<Player, Mission> roomBuilderMissions = new HashMap<>();
@@ -56,26 +57,12 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
         this.missionManager = missionManager;
         this.specialItems = specialItems;
         this.worldManager = worldManager;
-
-        defineExcludedTransformations();
     }
 
-    private void defineExcludedTransformations() {
-//        excludedTransformations.add(Material.ACACIA_DOOR);
-//        excludedTransformations.add(Material.OAK_DOOR);
-//        excludedTransformations.add(Material.REDSTONE_TORCH);
-//        excludedTransformations.add(Material.REDSTONE);
-//        excludedTransformations.add(Material.REPEATER);
-//        excludedTransformations.add(Material.COMPARATOR);
-//        excludedTransformations.add(Material.CHEST);
-//        excludedTransformations.add(Material.ENDER_CHEST);
-//        excludedTransformations.add(Material.LEVER);
-//        excludedTransformations.add(Material.STONE_BUTTON);
-//        excludedTransformations.add(Material.TRIPWIRE_HOOK);
-//        excludedTransformations.add(Material.OAK_SIGN);
-//        excludedTransformations.add(Material.OAK_WALL_SIGN);
-    }
-
+    /**
+     * Debug helper method to restore blocks after a raycast.
+     * @param sender
+     */
     public void restoreBlocks(CommandSender sender) {
         if(!lastBlockState.isEmpty()) {
             for(Location loc : lastBlockState.keySet()) {
@@ -93,6 +80,10 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
         }
     }
 
+    /**
+     * Debug helper method to save visible blocks after a raycast.
+     * @param sender
+     */
     public void saveBlocks(CommandSender sender) {
         if(!lastBlockState.isEmpty()) {
             Gson gson = new GsonBuilder().setPrettyPrinting().create();
@@ -173,10 +164,24 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
         }
     }
 
+    /**
+     * Debug helper method to test the raycasting algorithm.
+     * @param commandSender
+     * @param restoreAfterEach
+     * @param loopRaycast
+     */
     private void raycastTest(CommandSender commandSender, boolean restoreAfterEach, boolean loopRaycast) {
         raycastTest(commandSender, restoreAfterEach, loopRaycast, 0, 255);
     }
 
+    /**
+     * Debug helper method to test the raycasting algorithm.
+     * @param commandSender
+     * @param restoreAfterEach Whether or not to restore the blocks to normal before raycasting again.
+     * @param loopRaycast Whether to perform raycast multiple times.
+     * @param lowYBound
+     * @param upperYBound
+     */
     private void raycastTest(CommandSender commandSender, boolean restoreAfterEach, boolean loopRaycast, int lowYBound, int upperYBound) {
         Player player = (Player) commandSender;
 
@@ -210,10 +215,6 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                 Bukkit.broadcastMessage((System.currentTimeMillis() - begin) + " MS to raycast");
 
                 for (Block block : blocks) {
-                    if (excludedTransformations.contains(block.getType())) {
-                        continue;
-                    }
-
                     lastBlockState.put(block.getLocation(), block.getState());
                     blockPlayer.put(block.getLocation(), player);
 
@@ -264,6 +265,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
             commandSender.sendMessage(GENERIC_IMPROPER_COMMAND_MESSAGE);
         } else {
             switch(args[0].toLowerCase()) {
+                //testing methods that will help demonstrate the raycasting algorithm
                 case "raycast": //this will draw a continuous raycast to all visible blocks.
                     raycastTest(commandSender, false, true);
                     break;
@@ -283,7 +285,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                     restoreBlocks(commandSender);
                     break;
 
-                    //going to delete the falcon map, recreate it, then start the mission
+                //going to delete the falcon map, recreate it, then start the mission
                 case "test":
                     if(commandSender instanceof Player) {
                         Player p = (Player) commandSender;
@@ -306,55 +308,7 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                     }
                     break;
 
-                case "graphtest": //testing command to find distances between any two nodes; unsafe to crashing if supplied incorrect arguments
-                    if(args.length < 6) {
-                        commandSender.sendMessage("/mission graphtest <mission name> <room/decision> <name> <room/decision> <name>");
-                        break;
-                    } else {
-                        Mission mission = missionManager.getMission(args[1]);
-
-                        MissionGraph.MissionVertexType type1 = MissionGraph.MissionVertexType.valueOf(args[2].toUpperCase());
-                        MissionGraph.MissionVertexType type2 = MissionGraph.MissionVertexType.valueOf(args[4].toUpperCase());
-
-                        String name1 = args[3];
-                        String name2 = args[5];
-
-                        commandSender.sendMessage("Path between " + type1 + " " + name1 + " and " + type2 + " " + name2 + ":");
-
-                        MissionGraph.VertexPath path = mission.getOriginalMissionGraph().getShortestPathUsingEdges(type1, name1, type2, name2);
-
-                        if(path == null) {
-                            commandSender.sendMessage("No path found.");
-                            break;
-                        }
-
-                        commandSender.sendMessage(ChatColor.LIGHT_PURPLE + path.getPath().toString());
-                        commandSender.sendMessage(ChatColor.GREEN + "Length: " + path.getPathLength() + " blocks");
-
-                        if(path.getPath().size() > 0) {
-                            LinkedList<MissionGraph.MissionVertex> pathTrace = (LinkedList<MissionGraph.MissionVertex>) path.getPath().clone();
-
-                            Location firstLoc = pathTrace.poll().location;
-                            Entity ent = firstLoc.getWorld().spawnEntity(firstLoc, EntityType.ARMOR_STAND);
-
-                            commandSender.sendMessage("Showing path...");
-                            new BukkitRunnable() {
-
-                                @Override
-                                public void run() {
-                                    if (pathTrace.isEmpty()) {
-                                        cancel();
-                                        ent.remove();
-                                        commandSender.sendMessage("Path show ended.");
-                                        return;
-                                    }
-
-                                    ent.teleport(pathTrace.poll().location);
-                                }
-                            }.runTaskTimer(plugin, 20L, 20L);
-                        }
-                    }
-                    break;
+                //import a mission from a CSV file, generating the graph automatically through the GraphGenerator class
                 case "import":
                     if(!(commandSender instanceof Player)) {
                         commandSender.sendMessage(ChatColor.RED + "You must be a player to execute this command.");
@@ -392,6 +346,8 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                     missionManager.createMission(argsOriginal[1], ((Player) commandSender).getLocation(), csvFile, x, y, z);
                     commandSender.sendMessage("The mission named " + argsOriginal[1] + " has been created, and the graph has been automatically generated from the CSV file!");
                     break;
+
+                //create a new mission
                 case "create":
                     if(args.length < 2) {
                         commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission create <mission name>");
@@ -406,6 +362,8 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                         commandSender.sendMessage(ChatColor.RED + "A command with that name already exists!");
                     }
                     break;
+
+                //list all missions
                 case "list":
                     Collection<Mission> missions = missionManager.getAllMissions();
                     if(missions == null) {
@@ -418,6 +376,8 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                         commandSender.sendMessage((mission.canRunMission() ? ChatColor.GREEN : ChatColor.RED) + "- " + mission.getMissionName());
                     }
                     break;
+
+                //get information about a particular mission
                 case "info":
                     if(args.length < 2) {
                         commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission info <mission name>");
@@ -451,6 +411,8 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                     }.runTaskLater(plugin, 100L);
 
                     break;
+
+                //set a mission's attributes, such as time duration, the spawn location, or the edges of the graph (changing edges manually is typically not needed to be used)
                 case "set":
                     if(args.length < 3) {
                         commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission set <mission name> <duration/location/edges> [additional arguments]");
@@ -498,6 +460,8 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                             sendMissionCompletionProgress(commandSender, mission);
                             missionManager.saveData();
                             break;
+
+                        //helper method that mass creates edges. typically not needed to be used.
                         case "edges":
                             if(args.length < 4) {
                                 commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission set <mission name> edges <edges filename (in UUID folder)>");
@@ -557,6 +521,8 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                             break;
                     }
                     break;
+
+                //STARTS a mission
                 case "start":
                     if(args.length < 2) {
                         commandSender.sendMessage(ChatColor.RED + "Improper command. Usage: /mission start <mission name>");
@@ -581,6 +547,8 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                         commandSender.sendMessage(ChatColor.RED + "A mission is already in progress!");
                     }
                     break;
+
+                //aborts a mission, not saving a log
                 case "abort":
                     if(missionManager.abortMission()) {
                         commandSender.sendMessage(ChatColor.RED + "Mission aborted. A log was not saved.");
@@ -588,6 +556,8 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                         commandSender.sendMessage(ChatColor.RED + "No mission is currently in progress!");
                     }
                     break;
+
+                //deletes a mission from existance and deletes its files
                 case "delete":
                     if(!(commandSender instanceof Player)) {
                         commandSender.sendMessage(ChatColor.RED + "You must be a player to execute this command!");
@@ -622,6 +592,8 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                     }.runTaskLater(plugin, 40L);
 
                     break;
+
+                //modify a mission's graph edges and points. typically not needed to be used!
                 case "add":
                     if(!(commandSender instanceof Player)) {
                         commandSender.sendMessage(ChatColor.RED + "You must be a player to execute this command!");
@@ -779,6 +751,8 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                     }
 
                     break;
+
+                //used to manually create rooms for a mission. typically, GraphGenerator can do this for you.
                 case "room":
                     if(!(commandSender instanceof Player)) {
                         commandSender.sendMessage(ChatColor.RED + "You must be a player to execute this command!");
@@ -791,10 +765,10 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                     if(roomBuilderRooms.containsKey(p)) {
                         boolean captured = true;
                         switch(args[1].toLowerCase()) {
-                            case "raycast":
-                                p.sendMessage("Began scanning visible blocks within the room boundaries. To end raycasting, type in /mission room save or /mission room cancel");
-                                roomBuilderRooms.get(p).beginScanningRoomBlocks(plugin, p, roomBuilderRaycastYBounds.get(p)[0], roomBuilderRaycastYBounds.get(p)[1]);
-                                break;
+//                            case "raycast":
+//                                p.sendMessage("Began scanning visible blocks within the room boundaries. To end raycasting, type in /mission room save or /mission room cancel");
+//                                roomBuilderRooms.get(p).beginScanningRoomBlocks(plugin, p, roomBuilderRaycastYBounds.get(p)[0], roomBuilderRaycastYBounds.get(p)[1]);
+//                                break;
                             case "cancel":
                                 p.sendMessage(ChatColor.RED + "You cancelled the room builder.");
 
@@ -909,6 +883,8 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                             break;
                     }
                     break;
+
+                //used to get the wand to define a room
                 case "getitem":
                     if(!(commandSender instanceof Player)) {
                         commandSender.sendMessage(ChatColor.RED + "You must be a player to execute this command!");
@@ -932,18 +908,24 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                         p.sendMessage(ChatColor.RED + "Unknown item!");
                     }
                     break;
+
+                //used to get the generic overlay map
                 case "map":
                     if(commandSender instanceof Player) {
                         p = (Player) commandSender;
                         p.getInventory().setItemInMainHand(MapOverlayRenderer.getMap());
                     }
                     break;
+
+                //used to get the Google Maps of the current world. only shows information when mission is in progress!
                 case "gps":
                     if(commandSender instanceof Player) {
                         p = (Player) commandSender;
                         p.getInventory().setItemInMainHand(DynamicMapRenderer.getMap(plugin, missionManager, p, true, false, p.getWorld().getName().equals("falcon") ? DynamicMapRenderer.CustomMap.FALCON : DynamicMapRenderer.CustomMap.SPARKY));
                     }
                     break;
+
+                //gets both the debug and non-debug maps of the current world. only shows information when mission is in progress!
                 case "mapgps":
                     if(commandSender instanceof Player) {
                         p = (Player) commandSender;
@@ -951,6 +933,8 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                         p.getInventory().setItemInOffHand(DynamicMapRenderer.getMap(plugin, missionManager, p, false, true, p.getWorld().getName().equals("falcon") ? DynamicMapRenderer.CustomMap.FALCON : DynamicMapRenderer.CustomMap.SPARKY));
                     }
                     break;
+
+                //allows player to add worlds for missions and teleport between them
                 case "world":
                     if(!(commandSender instanceof Player)) {
                         commandSender.sendMessage(ChatColor.RED + "You must be a player to execute this command!");
@@ -1028,38 +1012,6 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
     }
 
     //untested, for experimental and demonstration purposes only; todo: currently does not work as intended
-    private EulerAngle vectorToEulerAngle(Vector v) {
-        double x = v.getX();
-        double y = v.getY();
-        double z = v.getZ();
-
-        double xz = Math.sqrt(x*x + z*z);
-
-        double eulX;
-        if(x < 0) {
-            if(y == 0) {
-                eulX = Math.PI*0.5;
-            } else {
-                eulX = Math.atan(xz/y)+Math.PI;
-            }
-        } else {
-            eulX = Math.atan(y/xz)+Math.PI*0.5;
-        }
-
-        double eulY;
-        if(x == 0) {
-            if(z > 0) {
-                eulY = Math.PI;
-            } else {
-                eulY = 0;
-            }
-        } else {
-            eulY = Math.atan(z/x)+Math.PI*0.5;
-        }
-
-        return new EulerAngle(eulX, eulY, 0);
-    }
-
     private void sendMissionCompletionProgress(CommandSender sender, Mission mission) {
         sender.sendMessage("" + ChatColor.BLUE + ChatColor.UNDERLINE + "Progress for mission " + ChatColor.GOLD + ChatColor.UNDERLINE + mission.getMissionName() + ChatColor.BLUE + ChatColor.UNDERLINE + ":");
 
@@ -1152,19 +1104,40 @@ public class MissionCommandHandler implements CommandExecutor, TabCompleter {
                     default:
                         return null;
                 }
-//            case 4:
-//                switch(args[0].toLowerCase()) {
-//                    case "room":
-//                        if(!roomBuilderRooms.containsKey(sender)) {
-//                            return new ArrayList<>(Arrays.asList("create"));
-//                        } else {
-//                            return null;
-//                        }
-//                    default:
-//                        return null;
-//                }
             default:
                 return null;
         }
+    }
+
+    private EulerAngle vectorToEulerAngle(Vector v) {
+        double x = v.getX();
+        double y = v.getY();
+        double z = v.getZ();
+
+        double xz = Math.sqrt(x*x + z*z);
+
+        double eulX;
+        if(x < 0) {
+            if(y == 0) {
+                eulX = Math.PI*0.5;
+            } else {
+                eulX = Math.atan(xz/y)+Math.PI;
+            }
+        } else {
+            eulX = Math.atan(y/xz)+Math.PI*0.5;
+        }
+
+        double eulY;
+        if(x == 0) {
+            if(z > 0) {
+                eulY = Math.PI;
+            } else {
+                eulY = 0;
+            }
+        } else {
+            eulY = Math.atan(z/x)+Math.PI*0.5;
+        }
+
+        return new EulerAngle(eulX, eulY, 0);
     }
 }

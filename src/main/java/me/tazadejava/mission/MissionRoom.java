@@ -21,6 +21,11 @@ import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 
+/**
+ * Represents a room on a map. Holds information about its boundaries as well as the locations where the player can enter and exit the room (doors).
+ *
+ * Also contains deprecated information about visible room blocks within every room. Realistically, the recommendation system cannot actually see the blocks in a room before the player can, so its use has been discontinued.
+ */
 public class MissionRoom {
 
     private String roomName;
@@ -85,6 +90,7 @@ public class MissionRoom {
         mainObject.add(roomName, roomData);
     }
 
+    @Deprecated
     public void beginScanningRoomBlocks(JavaPlugin plugin, Player player, int yLowerBound, int yUpperBound) {
         HashMap<Location, BlockState> lastBlockState = new HashMap<>();
         PreciseVisibleBlocksRaycaster raycaster = new PreciseVisibleBlocksRaycaster(true, true, false, yLowerBound, yUpperBound);
@@ -130,6 +136,7 @@ public class MissionRoom {
         }.runTaskTimer(plugin, 0, 4L);
     }
 
+    @Deprecated
     public void endScanningRoomBlocks(Runnable afterTimerEnds) {
         isScanningRoomBlocks = false;
         this.afterTimerEnds = afterTimerEnds;

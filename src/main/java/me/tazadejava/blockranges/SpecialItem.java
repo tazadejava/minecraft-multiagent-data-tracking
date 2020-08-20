@@ -8,6 +8,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 //requirements: item must be named and lored to become a special item
+
+/**
+ * Generic SpecialItem class that allows special implementations to be made. Used for the SelectionWand class to define room boundaries manually.
+ */
 public abstract class SpecialItem {
 
     public enum ItemEventHooks {

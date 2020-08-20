@@ -29,7 +29,9 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 
-//handles the mission data tracking
+/**
+ * Handles a mission active/inactive state, as well as the mission logistics overall (including countdown).
+ */
 public class MissionManager {
 
     private JavaPlugin plugin;
@@ -135,6 +137,16 @@ public class MissionManager {
         return true;
     }
 
+    /**
+     * Create a mission from a CSV file that represents the mapping of this mission.
+     * @param missionName Name to give mission
+     * @param playerLocation Where to spawn player when mission starts
+     * @param csvFile File that holds the mapping of the map
+     * @param startX Top left corner X coordinate of map
+     * @param startY Y coordinate of ground floor of map
+     * @param startZ Top left corner Z coordinate of map
+     * @return
+     */
     public boolean createMission(String missionName, Location playerLocation, File csvFile, int startX, int startY, int startZ) {
         if(missions.containsKey(missionName.toLowerCase())) {
             return false;
@@ -157,6 +169,12 @@ public class MissionManager {
         saveData();
     }
 
+    /**
+     * Starts the mission. Will toggle mission to in progress, and give players recommendation systems (if enabled) and a countdown until the end of the mission.
+     * @param missionInitiator
+     * @param mission
+     * @return True if started mission, false if a mission is already in progress.
+     */
     public boolean startMission(CommandSender missionInitiator, Mission mission) {
         if(missionInProgress) {
             return false;
@@ -276,6 +294,10 @@ public class MissionManager {
         return currentMission;
     }
 
+    /**
+     * Ends the mission.
+     * @param saveLog Whether or not the save the log of the mission.
+     */
     private void endMission(boolean saveLog) {
         String filename = null;
         if(saveLog) {
@@ -300,10 +322,6 @@ public class MissionManager {
         }
     }
 
-    public JsonObject getJsonLog() {
-        return jsonLog;
-    }
-
     public Collection<Mission> getAllMissions() {
         if(missions.isEmpty()) {
             return null;
@@ -312,6 +330,11 @@ public class MissionManager {
         return missions.values();
     }
 
+    /**
+     * Get analyzer for a particular player. Only works when the mission is in progress.
+     * @param p
+     * @return
+     */
     public PlayerAnalyzer getPlayerAnalyzer(Player p) {
         if(playerAnalyzers == null) {
             return null;
@@ -326,6 +349,10 @@ public class MissionManager {
         return null;
     }
 
+    /**
+     * Save the player stats into a log file.
+     * @return
+     */
     private String saveLog() {
         File dataFolder = new File(plugin.getDataFolder().getAbsolutePath() + "/rawData/");
 

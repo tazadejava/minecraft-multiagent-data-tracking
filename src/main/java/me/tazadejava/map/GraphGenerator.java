@@ -16,6 +16,9 @@ import java.util.*;
  */
 public class GraphGenerator {
 
+    /**
+     * Represents a path through the mapping.
+     */
     public static class PointPath {
 
         private LinkedList<Point> path;
@@ -35,6 +38,10 @@ public class GraphGenerator {
         }
     }
 
+    /**
+     * Represents a decision point in the mapping. The row/col are doubles instead of ints, since the decision point can be in the middle of a hallway between points.
+     * Will also hold the connected rooms and decision points to this decision point.
+     */
     public static class DecisionPoint {
 
         private double row, col;
@@ -98,6 +105,9 @@ public class GraphGenerator {
         }
     }
 
+    /**
+     * Integer representation of a point.
+     */
     public static class Point {
         private int row, col;
 
@@ -153,6 +163,9 @@ public class GraphGenerator {
         }
     }
 
+    /**
+     * Represents an empty space that is enclosed by doors or walls.
+     */
     public static class EnclosedSpace {
 
         public Set<Point> enclosedSpace;
@@ -185,6 +198,10 @@ public class GraphGenerator {
             -1, 0
     };
 
+    /**
+     * Can run to test the graph generation algorithm manually.
+     * @param args
+     */
     public static void main(String[] args) {
 //        File file = new File("/home/yoshi/Documents/GenesisUROP/OriginalMaps/sparky.csv");
 //        generateGraphFromCSV(file, new File("/home/yoshi/Documents/GenesisUROP/test/"), -2153, 52, 153);
@@ -205,11 +222,11 @@ public class GraphGenerator {
 
     /**
      * Generates a graph from a CSV file, and pastes the UUID folder in the outputDirectory
-     * @param inputFile
-     * @param outputDirectory
-     * @param startX
-     * @param y
-     * @param startZ
+     * @param inputFile CSV file to be processed
+     * @param outputDirectory Directory to output the generated graph
+     * @param startX Top-left tile on the CSV file that corresponds to the top left X coordinate in the actual Minecraft map.
+     * @param y Y coordinate of the map ground.
+     * @param startZ Top-left tile on the CSV file that corresponds to the top left Z coordinate in the actual Minecraft map.
      * @return The ID that was generated for this data
      */
     public static String generateGraphFromCSV(File inputFile, File outputDirectory, int startX, int y, int startZ) {
@@ -426,7 +443,6 @@ public class GraphGenerator {
 //                        Point parent = emptyTileParents.get(emptyTile);
 
                         //to simplify decision point creation, place a fake door at this point!
-//                        mapping[parent.row][parent.col] = "D";
                         mapping[emptyTile.row][emptyTile.col] = "D";
                     }
                 }
@@ -912,6 +928,11 @@ public class GraphGenerator {
         return missionID;
     }
 
+    /**
+     * Calculates the encompassing rectangular region that captures all the points in the set
+     * @param points
+     * @return Rectangular block range
+     */
     private static BlockRange2D getBoundary(Set<Point> points) {
         int minX = Integer.MAX_VALUE;
         int minZ = Integer.MAX_VALUE;
@@ -927,6 +948,14 @@ public class GraphGenerator {
         return new BlockRange2D(minX, maxX, minZ, maxZ);
     }
 
+    /**
+     * Converts a path to JsonObject to be saved to JSON file
+     * @param path
+     * @param startX
+     * @param y
+     * @param startZ
+     * @return
+     */
     private static JsonObject pathToJsonObject(PointPath path, int startX, int y, int startZ) {
         JsonObject pathData = new JsonObject();
 
@@ -1135,6 +1164,14 @@ public class GraphGenerator {
     }
 
     //this uses the decision point class, but this doesn't mean we are looking between decision points.
+
+    /**
+     * Calculates path from begin to end using the mapping. Empty is walkable.
+     * @param mapping
+     * @param begin
+     * @param end
+     * @return
+     */
     private static PointPath calculatePathBetweenNodes(String[][] mapping, Point begin, Point end) {
         HashMap<Point, Double> totalLocationCosts = new HashMap<>();
         HashMap<Point, Integer> numberOfBlocksFromBegin = new HashMap<>();
@@ -1240,6 +1277,13 @@ public class GraphGenerator {
         return getEnclosedSpace(start, mapping, null);
     }
 
+    /**
+     * Calculates the enclosed space of an area starting from start. Is enclosed by anything except empty Strings
+     * @param start
+     * @param mapping
+     * @param additionalWalls
+     * @return
+     */
     private static EnclosedSpace getEnclosedSpace(Point start, String[][] mapping, Set<Point> additionalWalls) {
         Set<Point> enclosedSpace = new HashSet<>();
         LinkedList<Point> openList = new LinkedList<>();

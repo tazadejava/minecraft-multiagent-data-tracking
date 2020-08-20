@@ -1133,7 +1133,7 @@ public class PlayerAnalyzer {
     }
 
     /**
-     * Recalculates time it takes to triage rooms on average. Uses room area as a rough estimate for time it takes to triage rooms (bigger rooms => more time to triage)
+     * Recalculates time it takes to triage rooms on average. Uses room area as a rough estimate for time it takes to triage rooms (bigger rooms equals more time to triage)
      */
     private void recalculateRoomTriageAverage() {
         averagePlayerRoomTriageSpeed = 0d;

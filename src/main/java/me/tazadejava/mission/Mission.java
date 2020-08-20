@@ -19,7 +19,9 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
-//holds data for a particular mission
+/**
+ * Holds all data related to a particular mission.
+ */
 public class Mission {
 
     private String missionID;
@@ -34,10 +36,11 @@ public class Mission {
     private MissionGraph originalGraph, currentMissionGraph;
 
     /**
-     * Import from a CSV file constructor
-     * @param missionName
-     * @param missionID
-     * @param dataFolder
+     * Import from a CSV file constructor; see MissionCommandHandler /mission import
+     * @param missionName Name of mission
+     * @param missionID Existing folder that has mission data
+     * @param dataFolder Data folder of the plugin
+     * @param playerSpawnLocation Location to spawn the player when mission starts
      */
     public Mission(String missionName, String missionID, File dataFolder, Location playerSpawnLocation) {
         this.missionName = missionName;
@@ -59,6 +62,13 @@ public class Mission {
         originalGraph = new MissionGraph(this);
     }
 
+    /**
+     * Load mission from JSON file data
+     * @param id
+     * @param dataFolder
+     * @param gson
+     * @param details
+     */
     public Mission(String id, File dataFolder, Gson gson, JsonObject details) {
         missionID = id;
 
@@ -74,6 +84,9 @@ public class Mission {
         loadMissionFolderData(dataFolder, gson);
     }
 
+    /**
+     * Creates a separate mission graph when the mission starts to allow for edge addition/deletion
+     */
     public void startMission() {
         currentMissionGraph = originalGraph.clone();
     }

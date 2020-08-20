@@ -22,6 +22,10 @@ import java.util.*;
 import java.util.function.Predicate;
 
 //use this stats tracker to output json files that fit the UROP format (post-Malmo parsed files); currently imcomplete
+
+/**
+ * Work in progress stats tracker that will output JSON files that will as closely match Malmo parsed files as possible, and that's it.
+ */
 public class StreamlinedStatsTracker implements StatsTracker {
 
     private LinkedHashMap<String, Statistic[]> trackedStatNames;

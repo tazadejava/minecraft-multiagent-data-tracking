@@ -13,6 +13,10 @@ import org.bukkit.plugin.java.JavaPlugin;
 import java.util.HashMap;
 
 //registers the EventListener and MissionCommandHandler into the server
+
+/**
+ * Main class that registers events and commands into the server.
+ */
 public class ActionTrackerPlugin extends JavaPlugin {
 
     private MissionManager missionManager;

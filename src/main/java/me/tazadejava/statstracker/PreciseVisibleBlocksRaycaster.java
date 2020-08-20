@@ -22,6 +22,10 @@ Key features:
 - allows for fuzzy raycast hits by checking adjacent blocks in a 3x3 2D range for inaccuracies
 - algorithm can be run async, but modifying blocks must be sync
  */
+
+/**
+ * Standalone class that will determine blocks currently visible to any given player. Used extensively in the PlayerAnalyzer class to make many assumptions while traversing the mission.
+ */
 public class PreciseVisibleBlocksRaycaster {
 
     class FOVBounds {

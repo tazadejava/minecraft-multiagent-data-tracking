@@ -7,12 +7,28 @@
 <body>
     <h1>Action Tracker Plugin API</h1>
     <p>
-        Action Tracker Plugin, developed the Summer of 2020 by Darren Lim, UROP, for use in the ASIST project at MIT.
+        Action Tracker Plugin, developed the Summer of 2020 by Darren Lim (UROP) for use in the ASIST project at MIT and more broadly for the DARPA program.
     </p>
     <p>
         Here you can find the documentation for the project, which primarily aimed at being a viable recommendation system that could help players
-        with traversing through a search-and-rescue mission as effectively as possible.
+        with traversing through a search-and-rescue mission as effectively as possible. This is primarily interfaced to the player using two methods:
+
+        one, the player will receive recommendations on where to move next that will follow a "best path" algorithm;
+
+        two, the player will receive a dynamically updating "Google Map" system that will tell the player important information at a glance, including where the player currently is on the map,
+         where the player has left victims behind, and where blockages and holes in the walls exist. This is achievable via the classes within this project that track data in the background continuously to help the player most efficiently save victims.
     </p>
+
+    <p>
+        Note that the recommendation system is simply an EXTENSION of the player's actions. The recommendation system aims to not unfairly obtain information about the map that the player does not or has not previously seen in the past.
+
+        All recommendations are meant to reduce players' cognitive load, and this is done primarily through analyzing what the player has seen so far and keeping track of what they have done, while also using the CSV map that is given
+
+        to players at the beginning of the mission to gain an awareness of the mission and its complexities over time.  The goal is that the system can be inspiration in theory to a potential extension of this idea in a more realistic setting;
+
+        in particular, since the recommendation system doesn't know anything that the player doesn't know, it can be built and extended for use cases where it is more impossible to understand ones surroundings, such as in real-life.
+    </p>
+
     <p>
         Since this plugin is compiled using Maven, if changes are made to the project with the intent of deployment in a server-environment, Maven can package the jar for transfer to the server folder simply via the "mvn package" command.
         The result will be stored in the target folder, which then can be copied over to the server's plugins folder for use.

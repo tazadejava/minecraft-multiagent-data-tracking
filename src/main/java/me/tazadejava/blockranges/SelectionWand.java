@@ -11,6 +11,9 @@ import org.bukkit.inventory.meta.ItemMeta;
 
 import java.util.HashMap;
 
+/**
+ * Implementation of SpecialItem class that determines the boundaries of a left/right click to define a room boundary. Hooks to the playerInteractEvent to create this range. Used only if the mission room bounds need to be manually defined: see MissionCommandHandler for more details on the implementation of this item.
+ */
 public class SelectionWand extends SpecialItem {
 
     private HashMap<Player, BlockRange2D> selections = new HashMap<>();

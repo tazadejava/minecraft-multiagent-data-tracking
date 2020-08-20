@@ -9,6 +9,9 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 
+/**
+ * Event Listener class that will call events for any SpecialItem implementations. Currently, only the PlayerInteractEvent is registered, but this template can easily be extended to any other event.
+ */
 public class SpecialItemEventListener implements Listener {
 
     private HashMap<SpecialItem.ItemEventHooks, List<SpecialItem>> hookedItems;

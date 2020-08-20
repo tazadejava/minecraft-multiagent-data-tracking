@@ -12,7 +12,10 @@ import org.bukkit.block.Block;
 
 import java.util.*;
 
-//represents the graphical implementation of missions
+/**
+ * Class holding the graphical representation of a mission map with room and decision vertices. Used to calculate best paths around a map as well as keep track of blockages and/or holes in the walls.
+ * Finally, will keep track of victims within rooms.
+ */
 public class MissionGraph {
 
     public enum MissionVertexType {
@@ -59,6 +62,9 @@ public class MissionGraph {
         }
     }
 
+    /**
+     * Path from one to another using vertices.
+     */
     public class VertexPath {
 
         private LinkedList<MissionVertex> path;
@@ -78,6 +84,9 @@ public class MissionGraph {
         }
     }
 
+    /**
+     * Path from one to another using exact locations. Discourage use since this requires access to Minecraft blocks.
+     */
     public class LocationPath {
 
         private LinkedList<Location> path;
@@ -132,6 +141,12 @@ public class MissionGraph {
         this.mission = mission;
     }
 
+    /**
+     * Load mission from JSON file
+     * @param mission
+     * @param data
+     * @param world
+     */
     public MissionGraph(Mission mission, JsonObject data, World world) {
         this.mission = mission;
 
@@ -173,9 +188,10 @@ public class MissionGraph {
         }
     }
 
-    private MissionGraph() {
-
-    }
+    /**
+     * Only used when cloning.
+     */
+    private MissionGraph() {}
 
     public MissionGraph clone() {
         MissionGraph graph = new MissionGraph();
@@ -279,7 +295,12 @@ public class MissionGraph {
         return Math.abs(begin.getBlockX() - end.getBlockX()) + Math.abs(begin.getBlockZ() - end.getBlockZ());
     }
 
-    //this method will traverse A* style to find a path from the begin to end, and return the distance
+    /**
+     * This method will traverse A* style to find a path from the begin to end, and return the distance. Recommended to find alternatives, since this requires accessing information that the player may not have seen yet.
+     * @param begin
+     * @param end
+     * @return
+     */
     private LocationPath calculatePathBetweenNodes(MissionVertex begin, MissionVertex end) {
         //general logic: distance-biased four-way BFS-like algorithm that tries to find the closest path from begin to end, where if any are rooms, then we will end when the algorithm finds the bounds of the room
 
@@ -400,7 +421,7 @@ public class MissionGraph {
         return defineEdge(getVertex(vertexType1, name1), getVertex(vertexType2, name2));
     }
 
-    //uses A* world traversal algorithm
+    //uses A* world traversal algorithm.
     public LocationPath defineEdge(MissionVertex begin, MissionVertex end) {
         if(!edges.containsKey(begin)) {
             edges.put(begin, new HashSet<>());
@@ -467,7 +488,12 @@ public class MissionGraph {
         return path;
     }
 
-    //proper dijkstra's algorithm
+    /**
+     * Finds the shortest path from one beginning vertex to all other vertices in the graph.
+     * @param beginVertexType
+     * @param beginVertexName
+     * @return
+     */
     public HashMap<MissionVertex, VertexPath> getShortestPathToAllVertices(MissionVertexType beginVertexType, String beginVertexName) {
         MissionVertex begin = getVertex(beginVertexType, beginVertexName);
 
@@ -540,26 +566,9 @@ public class MissionGraph {
             paths.put(min, new VertexPath(path, distances.get(min)));
         }
 
-        //print dijkstra's sizes
-//        openList.addAll(edges.keySet());
-//
-//        while(!openList.isEmpty()) {
-//            MissionVertex vertex = openList.poll();
-//            if(vertex.equals(begin)) {
-//                continue;
-//            }
-//
-//            VertexPath path = getShortestPathUsingEdges(begin, vertex);
-//
-//            Bukkit.broadcastMessage("" + ChatColor.BOLD + begin + " TO " + vertex);
-//            Bukkit.broadcastMessage(ChatColor.YELLOW + "COMPARE " + path.pathLength + " WITH DIJKSTRA'S " + paths.get(vertex).pathLength);
-//            Bukkit.broadcastMessage(ChatColor.BLUE + paths.get(vertex).path.toString());
-//        }
-
         return paths;
     }
 
-    //this method will use the already defined edges to get a path. it will not traverse A* style to find a path
     public VertexPath getShortestPathUsingEdges(MissionVertexType vertexType1, String name1, MissionVertexType vertexType2, String name2) {
         MissionVertex begin = getVertex(vertexType1, name1);
         MissionVertex end = getVertex(vertexType2, name2);
@@ -567,7 +576,12 @@ public class MissionGraph {
         return getShortestPathUsingEdges(begin, end);
     }
 
-    //dijkstra's like algorithm, but stops early when it finds the end
+    /**
+     * Dijkstra-like algorithm that finds shortest path to a given vertex. Will end early if path found. For efficiency, could use A* in the future.
+     * @param begin
+     * @param end
+     * @return
+     */
     private VertexPath getShortestPathUsingEdges(MissionVertex begin, MissionVertex end) {
         HashMap<MissionVertex, Double> distanceToStart = new HashMap<>();
 
@@ -637,12 +651,12 @@ public class MissionGraph {
     }
 
     /**
-     * verify that the edge exists and is traversable. This checks a path from node a to b that was defined in the graphical representation
+     * Verify that the edge exists and is traversable. This checks a path from node a to b that was defined in the graphical representation.
      * @param type1
      * @param name1
      * @param type2
      * @param name2
-     * @param visibleBlocks
+     * @param visibleBlocks Blocks that have been seen via the PreciseVisibleBlocksRaycaster
      * @return null if edge is traversable, the blocking location if there is something blocking the edge from letting the player go through
      */
     public Location verifyEdgeTraversable(MissionVertexType type1, String name1, MissionVertexType type2, String name2, Set<Block> visibleBlocks) {
@@ -746,6 +760,14 @@ public class MissionGraph {
         return edges.getOrDefault(getVertex(vertex.type, vertex.name), null);
     }
 
+    /**
+     * Used for room potential changing edge weights. Deprecated.
+     * @param begin
+     * @param end
+     * @param weight
+     * @return
+     */
+    @Deprecated
     public boolean modifyEdgeWeight(MissionVertex begin, MissionVertex end, double weight) {
         if(mission != null) { //must be a copy of the mission graph; cannot modify original
             return false;
@@ -761,6 +783,14 @@ public class MissionGraph {
         return true;
     }
 
+    /**
+     * Gets the calculated location path between two vertices.
+     * @param type1
+     * @param name1
+     * @param type2
+     * @param name2
+     * @return
+     */
     public LinkedList<Location> getExactPathBetweenEdges(MissionVertexType type1, String name1, MissionVertexType type2, String name2) {
         MissionVertex begin = getVertex(type1, name1);
         MissionVertex end = getVertex(type2, name2);

@@ -9,7 +9,11 @@ import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
 
-//autoloads worlds that were not part of the original server
+/**
+ * Helper class that will autoload worlds that were not part of the original worlds (typically world, world_nether, world_end).
+ *
+ * This allows for missions that are on different worlds to be used effectively.
+ */
 public class WorldManager {
 
     private JavaPlugin plugin;

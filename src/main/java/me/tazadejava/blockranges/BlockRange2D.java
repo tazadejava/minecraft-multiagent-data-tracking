@@ -99,6 +99,11 @@ public class BlockRange2D {
         return this;
     }
 
+    /**
+     * Rectangular collision check.
+     * @param otherBounds
+     * @return
+     */
     public boolean collidesWith(BlockRange2D otherBounds) {
         return (startX <= otherBounds.endX) && (otherBounds.startX <= endX) && (startZ <= otherBounds.endZ) && (otherBounds.startZ <= endZ);
     }
@@ -111,6 +116,9 @@ public class BlockRange2D {
         return new int[] {startZ, endZ};
     }
 
+    /**
+     * Used only in conjunction with the start/end block methods. Will ensure that start X/Z will be less than end X/Z.
+     */
     private void calculateRanges() {
         if(startBlock.getX() < endBlock.getX()) {
             startX = startBlock.getX();
@@ -133,11 +141,22 @@ public class BlockRange2D {
         return (endX - startX) * (endZ - startZ);
     }
 
+    /**
+     * Only checks X and Z, does not check Y
+     * @param location
+     * @return
+     */
     public boolean isInRange(Location location) {
         return (location.getBlockX() >= startX && location.getBlockX() <= endX)
                 && (location.getBlockZ() >= startZ && location.getBlockZ() <= endZ);
     }
 
+    /**
+     * Only checks X and Z, does not check Y
+     * @param x
+     * @param z
+     * @return
+     */
     public boolean isInRange(int x, int z) {
         return x >= startX && x <= endX && z >= startZ && z <= endZ;
     }

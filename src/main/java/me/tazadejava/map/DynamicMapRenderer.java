@@ -26,6 +26,9 @@ import java.io.InputStreamReader;
 import java.util.List;
 import java.util.*;
 
+/**
+ * The "Google Maps" implementation that assists players traversing through the missions. Will automatically rotate and translate a 128x128 image to determine where a player is currently located on the map.
+ */
 public class DynamicMapRenderer extends MapRenderer {
 
     public enum CustomMap {
@@ -96,6 +99,58 @@ public class DynamicMapRenderer extends MapRenderer {
         }
     }
 
+    /**
+     * Main method that will create a BufferedImage from a CSV file and set the mapImage variable to this image.
+     * @param name CSV file within the resources folder. Ends with .csv
+     * @param startX Top-left x coordinate of the first block on the CSV file.
+     * @param startZ Top-left z coordinate of the first block on the CSV file.
+     */
+    private void setMapImageFromCSV(String name, int startX, int startZ) {
+        //adjust for manual border
+        startX -= 1;
+        startZ -= 1;
+
+        if(mapping == null) {
+            defineMapping(name);
+        }
+
+        BufferedImage originalImage = new BufferedImage(mapping[0].length, mapping.length, BufferedImage.TYPE_INT_ARGB);
+
+        Graphics2D graphics = originalImage.createGraphics();
+
+        for(int r = 0; r < mapping.length; r++) {
+            for(int c = 0; c < mapping[r].length; c++) {
+                String val = mapping[r][c];
+
+                int color;
+                if(val.isEmpty()) {
+                    color = Color.WHITE.getRGB();
+                } else {
+                    switch(val) {
+                        case "D":
+                            color = Color.GREEN.getRGB();
+                            break;
+                        default:
+                            color = Color.BLACK.getRGB();
+                            break;
+                    }
+                }
+                originalImage.setRGB(c, r, color);
+            }
+        }
+
+        graphics.dispose();
+
+        mapImage = getScaledImage(128, 128, originalImage);
+
+        xRange = new int[] {startX, startX + originalImage.getWidth()};
+        zRange = new int[] {startZ, startZ + originalImage.getHeight()};
+    }
+
+    /**
+     * Creates a 2D array that maps a CSV file in the resources folder to a String mapping
+     * @param name Name of the CSV file in the resources file, including .csv
+     */
     private void defineMapping(String name) {
         List<String[]> lines = new ArrayList<>();
 
@@ -140,6 +195,13 @@ public class DynamicMapRenderer extends MapRenderer {
         mapping = lines.toArray(new String[0][0]);
     }
 
+    /**
+     * Scales an image to the specified width and height.
+     * @param width Desired width.
+     * @param height Desired height.
+     * @param originalImage Original image passed in.
+     * @return The scaled image.
+     */
     private BufferedImage getScaledImage(int width, int height, BufferedImage originalImage) {
         BufferedImage scaledImage = new BufferedImage(width, height, originalImage.getType());
         Graphics2D graphics = scaledImage.createGraphics();
@@ -152,18 +214,10 @@ public class DynamicMapRenderer extends MapRenderer {
         return scaledImage;
     }
 
-    private void setMapImageFromCSV(String name, int startX, int startZ) {
-        //adjust for manual border
-        startX -= 1;
-        startZ -= 1;
-
-        if(mapping == null) {
-            defineMapping(name);
-        }
-
-        //need to map this to a 128 by 128 image
-        //scale the mapping somehow???
-
+    /**
+     * Should run async to not lag the server. Will check for created and deleted edges, and update mapping accordingly. DISABLED until further notice. Can be used in the future to manually map onto the CSV file mapping instead of creating image overlays like the current implementation does.
+     */
+    private void updateMappingImage() {
         BufferedImage originalImage = new BufferedImage(mapping[0].length, mapping.length, BufferedImage.TYPE_INT_ARGB);
 
         Graphics2D graphics = originalImage.createGraphics();
@@ -192,45 +246,18 @@ public class DynamicMapRenderer extends MapRenderer {
         graphics.dispose();
 
         mapImage = getScaledImage(128, 128, originalImage);
-
-        xRange = new int[] {startX, startX + originalImage.getWidth()};
-        zRange = new int[] {startZ, startZ + originalImage.getHeight()};
     }
 
     /**
-     * Should run async to not lag the server. Will check for created and deleted edges, and update mapping accordingly.
+     * Creates an ItemStack representation of this class so that it can be used.
+     * @param plugin
+     * @param missionManager
+     * @param player Will show best path recommendations to this player
+     * @param showRoomAndDecisionLabels Whether or not to show the debug labels that print numbers for the decision and room vertices on the map
+     * @param showBestPathAndVictims Whether or not to show recommendations on the map; namely, this shows the best path, victims, and modified edges
+     * @param mapType Map specification to use (csv or image).
+     * @return
      */
-//    private void updateMappingImage() {
-//        BufferedImage originalImage = new BufferedImage(mapping[0].length, mapping.length, BufferedImage.TYPE_INT_ARGB);
-//
-//        Graphics2D graphics = originalImage.createGraphics();
-//
-//        for(int r = 0; r < mapping.length; r++) {
-//            for(int c = 0; c < mapping[r].length; c++) {
-//                String val = mapping[r][c];
-//
-//                int color;
-//                if(val.isEmpty()) {
-//                    color = Color.WHITE.getRGB();
-//                } else {
-//                    switch(val) {
-//                        case "D":
-//                            color = Color.GREEN.getRGB();
-//                            break;
-//                        default:
-//                            color = Color.BLACK.getRGB();
-//                            break;
-//                    }
-//                }
-//                originalImage.setRGB(c, r, color);
-//            }
-//        }
-//
-//        graphics.dispose();
-//
-//        mapImage = getScaledImage(128, 128, originalImage);
-//    }
-
     public static ItemStack getMap(JavaPlugin plugin, MissionManager missionManager, Player player, boolean showRoomAndDecisionLabels, boolean showBestPathAndVictims, CustomMap mapType) {
         MapView map = Bukkit.createMap(Bukkit.getWorlds().get(0));
         map.getRenderers().clear();
@@ -247,15 +274,14 @@ public class DynamicMapRenderer extends MapRenderer {
         return mapItem;
     }
 
+    /**
+     * Renders the map onto an image. Is a Spigot method overriden to map the image, rotate it, and translate it.
+     * @param map
+     * @param canvas
+     * @param player
+     */
     @Override
     public void render(MapView map, MapCanvas canvas, Player player) {
-//        new BukkitRunnable() {
-//            @Override
-//            public void run() {
-//                updateMappingImage();
-//            }
-//        }.runTaskAsynchronously(plugin);
-
         double playerScaleX = getScale(xRange, player.getLocation().getBlockX());
         double playerScaleZ = getScale(zRange, player.getLocation().getBlockZ());
 
@@ -270,18 +296,29 @@ public class DynamicMapRenderer extends MapRenderer {
 
         int pointerZTranslation = 64;
         MapCursorCollection cursors = new MapCursorCollection();
+        //draw the image
         canvas.drawImage(0, 0, getTranslatedRotatedImage(mapImage, angle, playerScaleX, playerScaleZ, pointerZTranslation));
 
+        //draw the cursor at the bottom half of the map
         cursors.addCursor(new MapCursor((byte) 0, (byte) pointerZTranslation, (byte) 8, MapCursor.Type.RED_POINTER, true));
 
         canvas.setCursors(cursors);
     }
 
+    /**
+     * Will translate, then rotate the image to fit on the map "Google Maps" style
+     * @param image Image to translate and rotate
+     * @param angle Angle to rotate
+     * @param xScale Player's relative X position on the map (0 to 1)
+     * @param zScale Player's relative Z position on the map (0 to 1)
+     * @param pointerZTranslation How down is the cursor from the top of the map
+     * @return
+     */
     private BufferedImage getTranslatedRotatedImage(BufferedImage image, int angle, double xScale, double zScale, int pointerZTranslation) {
         int width = image.getWidth();
         int height = image.getHeight();
 
-        //translate, then rotate
+        //translate first
 
         BufferedImage translated = new BufferedImage(width * 3, height * 3, image.getType());
 
@@ -311,6 +348,14 @@ public class DynamicMapRenderer extends MapRenderer {
         return rotated;
     }
 
+    /**
+     * Annnotate the map with overlays. This is where things like decision/room vertices, best path circles, added/removed edges are rendered.
+     * @param graphics Graphics instance for image to draw over.
+     * @param mapOffsetX X offset to add to drawn images
+     * @param mapOffsetZ Z offset to add to drawn images
+     * @param width Map width
+     * @param height Map height
+     */
     private void drawOnMap(Graphics2D graphics, int mapOffsetX, int mapOffsetZ, int width, int height) {
         if(analyzer == null || mission == null) {
             if(manager.getCurrentMission() != null && manager.isMissionInProgress(manager.getCurrentMission())) {
@@ -410,6 +455,14 @@ public class DynamicMapRenderer extends MapRenderer {
         }
     }
 
+    /**
+     * Draw the added and removed edges in the form of big X's and O's
+     * @param graphics
+     * @param mapOffsetX
+     * @param mapOffsetZ
+     * @param width
+     * @param height
+     */
     private void drawAddedRemovedEdges(Graphics2D graphics, int mapOffsetX, int mapOffsetZ, int width, int height) {
         MissionGraph graph = mission.getMissionGraph();
 
@@ -432,6 +485,14 @@ public class DynamicMapRenderer extends MapRenderer {
         }
     }
 
+    /**
+     * Draw the decision and room vertices as numbers on the map. Should only be used for testing purposes.
+     * @param graphics
+     * @param mapOffsetX
+     * @param mapOffsetZ
+     * @param width
+     * @param height
+     */
     private void drawDecisionAndRoomLabels(Graphics2D graphics, int mapOffsetX, int mapOffsetZ, int width, int height) {
         //draw decision and room circles
         graphics.setColor(Color.ORANGE);
@@ -481,9 +542,10 @@ public class DynamicMapRenderer extends MapRenderer {
         }
     }
     /**
-     * Scale from 0 to 1 based on where on the map it is
+     * Scale from 0 to 1 based on where on the inputted range the value is.
      * @param range
      * @param value
+     * @return Scale from 0 to 1. Will not go over 1 or under 0, instead encapsulating the numbers in the lower and upper bounds.
      */
     private double getScale(int[] range, int value) {
         int scaleLength = range[1] - range[0];

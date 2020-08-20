@@ -23,8 +23,16 @@ import java.util.*;
 import java.util.function.Predicate;
 
 //use this stats tracker to output data useful for recommendation system
+
+/**
+ * Enhanced stats tracker that builds off of the StreamlinedStatsTracker to give data useful for a recommendation system.
+ * Removes some tracked data from the streamlined stats tracker that is not useful for a recommendation system, such as the blocks around the player (LineOfSight)
+ */
 public class EnhancedStatsTracker implements StatsTracker {
 
+    /**
+     * Represents a snapshot of data from any given time. Can be passed to the PlayerAnalyzer to give a snapshot of what was happening at any given time.
+     */
     public class LastStatsSnapshot {
 
         public Statistic[] trackedStats;
@@ -96,7 +104,6 @@ public class EnhancedStatsTracker implements StatsTracker {
             }
 
             deltaStats.lastPlayerBlocksBrokenLocations = new ArrayList<>();
-            //TODO: this part crashes nullexception sometimes, idk why but check in more depth later when revising the statstracker
             if(lastPlayerBlocksBrokenLocations != null && lastStats.lastPlayerBlocksBrokenLocations != null && lastPlayerBlocksBrokenLocations.size() > lastStats.lastPlayerBlocksBrokenLocations.size()) {
                 for(int i = lastStats.lastPlayerBlocksBrokenLocations.size(); i < lastPlayerBlocksBrokenLocations.size(); i++) {
                     deltaStats.lastPlayerBlocksBrokenLocations.add(lastPlayerBlocksBrokenLocations.get(i));
@@ -415,6 +422,7 @@ public class EnhancedStatsTracker implements StatsTracker {
         }
     }
 
+    //NOT USED ANYMORE; not useful for a recommendation system
 //    private void addLineOfSight(HashMap<String, Object> values, Player p) {
 //        RayTraceResult blockRayTrace = p.getWorld().rayTraceBlocks(p.getEyeLocation(), p.getEyeLocation().getDirection(), 50, FluidCollisionMode.SOURCE_ONLY, true);
 //        RayTraceResult entityRayTrace = rayTraceEntity(p);
@@ -468,6 +476,7 @@ public class EnhancedStatsTracker implements StatsTracker {
 //        }
 //    }
 
+    //NOT USED ANYMORE; not useful for a recommendation system
     //allows async retrieval of entities around the player, 32-40 blocks away
 //    private RayTraceResult rayTraceEntity(Player p) {
 ////        RayTraceResult rayTrace = new RayTraceResult();
