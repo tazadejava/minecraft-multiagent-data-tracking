@@ -1,5 +1,17 @@
-# minecraft-multiagent-data-tracking
-Spigot plugin developed for Genesis Recommendation System UROP, Summer of 2020.
+# Minecraft Multiagent Data Tracking Plugin
+
+Spigot plugin developed for Genesis Recommendation System UROP, Summer 2020.
+
+## Main Features:
+
+- Raycasting algorithm that can maintain a real-time list of blocks that are currently visible to a player
+- Help players traverse through missions by giving real-time recommendations in the form of best path algorithms through the entire map, thus finding victims as fast as possible
+- Reduce cognitive load by dynamically keeping track of blockages and new holes between rooms
+- Provide a simple map interface to both let the player know where they are in the mission, as well as annotate important features of the current mission (such as where victims were left behind, where blockages/holes are, and where the best path through the map is)
+- Maintain estimated player trajectories and inform the player of real-time calculated times it will take to traverse through all rooms in the map
+
+![Annotated Map Example](https://github.com/tazadejava/minecraft-multiagent-data-tracking/readme-resources/annotated-map-example.png?raw=true)
+Example of an annotated map for the Sparky map. Note that the player is currently located on the red cursor, rooms where victims still reside contain a rectangular red overlay, and blockages/holes between rooms are marked with X's and O's, respectively. The best path recommendation system is shown in green circles and purple lines.
 
 # Quick Start: how to test the raycasting visibility algorithm
 
