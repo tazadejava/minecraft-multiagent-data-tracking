@@ -1,8 +1,34 @@
 # Minecraft Multiagent Data Tracking Plugin
 
-Spigot plugin developed for Genesis Recommendation System UROP, Summer 2020.
+Spigot plugin developed for ASIST search-and-rescue UROP, Summer 2020. 
 
-## Main Features:
+Note that along with the documentation below, the project itself has a detailed javadoc that can be accessed by cloning the repository and opening the file **javadocs/index.html**.
+
+***
+
+# Table of Contents
+
+## **Using the Plugin**
+
+[Main Features](#main-features)
+
+[Setting up server to test recommendation system locally](#setting-up-server-to-test-recommendation-system-locally)
+
+[How to start missions](#how-to-start-missions)
+
+[Testing the raycasting visibility algorithm](#testing-the-raycasting-visibility-algorithm)
+
+## **Developing the Plugin**
+
+[How does the mission file structure work?](#how-does-the-mission-file-structure-work)
+
+[How are missions defined?](#how-are-missions-defined)
+
+[How does the best path algorithm work?](#how-does-the-best-path-algorithm-work)
+
+***
+
+# Main Features:
 
 - Raycasting algorithm that can maintain a real-time list of blocks that are currently visible to a player
 - Help players traverse through missions by giving real-time recommendations in the form of best path algorithms through the entire map, thus finding victims as fast as possible
@@ -10,10 +36,24 @@ Spigot plugin developed for Genesis Recommendation System UROP, Summer 2020.
 - Provide a simple map interface to both let the player know where they are in the mission, as well as annotate important features of the current mission (such as where victims were left behind, where blockages/holes are, and where the best path through the map is)
 - Maintain estimated player trajectories and inform the player of real-time calculated times it will take to traverse through all rooms in the map
 
-![Annotated Map Example](https://github.com/tazadejava/minecraft-multiagent-data-tracking/readme-resources/annotated-map-example.png?raw=true)
-Example of an annotated map for the Sparky map. Note that the player is currently located on the red cursor, rooms where victims still reside contain a rectangular red overlay, and blockages/holes between rooms are marked with X's and O's, respectively. The best path recommendation system is shown in green circles and purple lines.
+![Annotated Map Example](https://github.com/tazadejava/minecraft-multiagent-data-tracking/blob/master/readme-resources/annotated-map-example.png?raw=true)
+*Example of an annotated map for the Sparky map. Note that the player is currently located on the red cursor, rooms where victims still reside contain a rectangular red overlay, and blockages/holes between rooms are marked with X's and O's, respectively. The best path recommendation system is shown in green circles and purple lines.*
 
-# Quick Start: how to test the raycasting visibility algorithm
+***
+
+# Setting up server to test recommendation system locally
+
+---
+
+***
+
+# How to start missions
+
+---
+
+***
+
+# Testing the raycasting visibility algorithm
 
 **Note that you do not need to clone this repo to test the raycasting algorithm. Simply download the server file to test the algorithm, and you can use the repo to view the source and see how the algorithm is implemented.**
 
@@ -40,13 +80,13 @@ Example of an annotated map for the Sparky map. Note that the player is currentl
     - This will only run the algorithm once, so you can see what is currently visible at your current view.
     - Again, type "/mission raycastreset" to reset the blocks to normal.
     
-# Important classes that implement this algorithm
+## Important classes that implement this algorithm
 
-## MissionCommandHandler
+### MissionCommandHandler
 
 This class is in charge of handling all commands that start with the word "mission". You can see that it calls a switch method to determine which command was used, then it runs the algorithm depending on which raycasting algorithm was used (see raycastTest method and restoreBlocks method to see how we can interact with the results of the algorithm) 
 
-## PreciseVisibleBlocksRaycaster
+### PreciseVisibleBlocksRaycaster
 
 This class implements the raycasting algorithm. Simply run getVisibleBlocks method and you will get a list of blocks that are visible to the player. Optional ignoredBlocks method is not currently in use, and is currently in testing, so for now just pass null or use the other method. There are a few helper methods that help determine the raycasting algorithm, but essentially it will run like how I described during the meeting:
 
@@ -64,6 +104,20 @@ This class implements the raycasting algorithm. Simply run getVisibleBlocks meth
 
 7) The hyperPrecision mode was implemented recently, and will basically shoot out up to 5 rays from the player eye location to different parts of the block to accurately check if we can see the block or not. It is also more computationally intense, but it leads to extremely accurate results.
 
-# Remarks
+***
 
-Let me know if anything is confusing or you have questions about something else related to the plugin (or plugins in general)! A lot of the code is still in progress, and I will be adding comments/cleaning up code as time goes on.
+# How does the mission file structure work?
+
+---
+
+***
+
+# How are missions defined?
+
+---
+
+***
+
+# How does the best path algorithm work?
+
+---
