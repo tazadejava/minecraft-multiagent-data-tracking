@@ -26,19 +26,22 @@ public class ActionTrackerPlugin extends JavaPlugin {
             getDataFolder().mkdir();
         }
 
+        //handles multiple worlds being loaded into the server, since some missions span between multiple worlds
         WorldManager worldManager = new WorldManager(this);
-
         worldManager.loadWorlds();
 
+        //registers the wand for use in manual room defining
         HashMap<String, SpecialItem> specialItems = new HashMap<>();
         specialItems.put("wand", new SelectionWand());
-
-        MissionEventListener listener;
-        getServer().getPluginManager().registerEvents(listener = new MissionEventListener(), this);
-        missionManager = new MissionManager(this, listener);
-
         getServer().getPluginManager().registerEvents(new SpecialItemEventListener(specialItems.values()), this);
 
+        //registers the main mission event listener
+        MissionEventListener listener;
+        getServer().getPluginManager().registerEvents(listener = new MissionEventListener(), this);
+
+        missionManager = new MissionManager(this, listener);
+
+        //registers the main mission command
         getCommand("mission").setExecutor(commandHandler = new MissionCommandHandler(this, missionManager, specialItems, worldManager));
         getCommand("mission").setTabCompleter(commandHandler);
     }

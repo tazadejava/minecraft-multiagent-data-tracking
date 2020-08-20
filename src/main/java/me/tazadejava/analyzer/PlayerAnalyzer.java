@@ -1,7 +1,6 @@
 package me.tazadejava.analyzer;
 
 import com.google.gson.JsonObject;
-import me.tazadejava.actiontracker.Utils;
 import me.tazadejava.blockranges.BlockRange2D;
 import me.tazadejava.map.DynamicMapRenderer;
 import me.tazadejava.mission.Mission;
@@ -18,7 +17,6 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
-import org.bukkit.block.data.BlockData;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scoreboard.DisplaySlot;
@@ -27,11 +25,27 @@ import org.bukkit.scoreboard.Scoreboard;
 
 import java.util.*;
 
-//for the most part, this class does not have to exist within the plugin:
-//to export to a separate process:
-// - save the json file continuously and have an external process check for changes, then perform similar actions to what is being done here, but search the JSON file instead of casting
+/*
+    DEVELOPER'S NOTE:
+
+    for the most part, this class does not have to exist within the plugin, aside from a couple areas where the player is accessed instead of the stats.
+    particularly: if for whatever reason someone wants this processing to exist OUTSIDE of the plugin itself, it can be done with a few changes, namely whenever the Player class or any other proprietary classes are used that are NOT
+        a part of the LastStatsSnapshot class.
+    as a result, the classes are coded in a strange way; instead of hooking directly into Minecraft events, this class relies a lot on the LastStatsSnapshot to obtain a snapshot of previous actions done, and uses this thereafter to
+        create an understanding of the mission world and give best path recommendations.
+
+    if this is actually something that wants to be done, I would start by funneling needed material into the LastStatsSnapshot class and redirecting all calls to this class as a start. then, this class will be able to separate from
+        the project and run as a separate process, which in turn can be interacted with through sockets and networks, for example.
+ */
+
+/**
+ * Handles player-specific actions and recommendations: particularly, the best path recommendations, speed analysis, and edge creation/deletion algorithms are run here.
+ */
 public class PlayerAnalyzer {
 
+    /**
+     * Class that assists with determining player speed between decision points (aka in the hallway).
+     */
     public class DecisionTraversal {
 
         public MissionGraph.MissionVertex beginVertex, endVertex;
@@ -47,11 +61,16 @@ public class PlayerAnalyzer {
         }
     }
 
+    /**
+     * Used to assist with telling the player where to go relative to their current facing direction (ex: go left).
+     */
     public enum Direction {
         NORTH, EAST, SOUTH, WEST
     }
 
+    //list of blocks that are classified as victims
     public static final Set<Material> VICTIM_BLOCKS = new HashSet<>(Arrays.asList(Material.PRISMARINE, Material.GOLD_BLOCK));
+
     private static final BlockFace[] ADJACENT_FACES = new BlockFace[] {BlockFace.NORTH, BlockFace.EAST, BlockFace.WEST, BlockFace.SOUTH, BlockFace.UP, BlockFace.DOWN};
 
 
@@ -61,9 +80,10 @@ public class PlayerAnalyzer {
 
     //TODO: these are questions that will be asked to the player before any experiment starts, obtained via data beforehand
     //TODO: this can be used with Genesis, for example, to determine if specific players need recommendations at any given time
+    //todo: recommendation: in true java spirit, the player's background data can be compartialized in a different class to hold their data, and accessible here via object
     private boolean isSpatiallyAware = true;
 
-    //the indices will represent the victim number
+    //the indices will represent the victim number (arbitrary counter for victims seen, currently holds no significance)
     private List<Location> victimBlocks;
     private Block currentVictimTarget;
 
@@ -74,6 +94,7 @@ public class PlayerAnalyzer {
     private List<String> firstLevelActions;
 
     private MissionGraph.MissionVertex lastVertex;
+
     private Set<MissionGraph.MissionVertex> visitedVertices;
     private Set<MissionGraph.MissionVertex> unvisitedRooms;
 
@@ -91,13 +112,14 @@ public class PlayerAnalyzer {
     private PreciseVisibleBlocksRaycaster visibleBlocksRaycaster;
     private long lastRaycastTime;
 
-    private static final boolean PRINT = true;
+    private static final boolean PRINT_RECOMMENDATIONS = true;
     private TextComponent actionBarMessage = null;
     private String lastRecommendationMessage;
     private List<String> bestPathFormat;
     private List<MissionGraph.MissionVertex> lastBestPath;
 
-    private static final boolean DEBUG_PRINT = false;
+    //if set to true, then prints more verbose recommendation information when the player starts the mission
+    private static final boolean DEBUG_VERBOSE_RECOMMENDATIONS = false;
 
     public PlayerAnalyzer(JavaPlugin plugin, Player player, Mission mission, MissionManager missionManager) {
         this.player = player;
@@ -119,17 +141,29 @@ public class PlayerAnalyzer {
         visibleBlocksRaycaster = new PreciseVisibleBlocksRaycaster(true, true, false, mission.getPlayerSpawnLocation().getBlockY(), mission.getPlayerSpawnLocation().getBlockY() + 2);
 
         //give the player a map
-        if(mission.getPlayerSpawnLocation().getWorld().getName().equals("falcon")) {
-//            player.getInventory().setItemInMainHand(DynamicMapRenderer.getMap(missionManager, player, false, DynamicMapRenderer.CustomMap.FALCON));
-            player.getInventory().setItemInOffHand(DynamicMapRenderer.getMap(plugin, missionManager, player, false, DynamicMapRenderer.CustomMap.FALCON));
-//            player.getInventory().setItemInOffHand(DynamicMapRenderer.getMap(missionManager, player, true, DynamicMapRenderer.CustomMap.FALCON));
-        } else {
-//            player.getInventory().setItemInMainHand(DynamicMapRenderer.getMap(missionManager, player, false, DynamicMapRenderer.CustomMap.SPARKY));
-            player.getInventory().setItemInOffHand(DynamicMapRenderer.getMap(plugin, missionManager, player, false, DynamicMapRenderer.CustomMap.SPARKY));
-//            player.getInventory().setItemInOffHand(DynamicMapRenderer.getMap(missionManager, player, true, DynamicMapRenderer.CustomMap.SPARKY));
+
+        if(PRINT_RECOMMENDATIONS) {
+            if (mission.getPlayerSpawnLocation().getWorld().getName().equals("falcon")) {
+                player.getInventory().setItemInOffHand(DynamicMapRenderer.getMap(plugin, missionManager, player, false, true, DynamicMapRenderer.CustomMap.FALCON));
+
+                //give the player a map that prints decision and room points
+                if (DEBUG_VERBOSE_RECOMMENDATIONS) {
+                    player.getInventory().setItemInMainHand(DynamicMapRenderer.getMap(plugin, missionManager, player, true, false, DynamicMapRenderer.CustomMap.FALCON));
+                }
+            } else {
+                player.getInventory().setItemInOffHand(DynamicMapRenderer.getMap(plugin, missionManager, player, false, true, DynamicMapRenderer.CustomMap.SPARKY));
+
+                //give the player a map that prints decision and room points
+                if (DEBUG_VERBOSE_RECOMMENDATIONS) {
+                    player.getInventory().setItemInMainHand(DynamicMapRenderer.getMap(plugin, missionManager, player, true, false, DynamicMapRenderer.CustomMap.SPARKY));
+                }
+            }
         }
     }
 
+    /**
+     * Maps relative directions into human-readable English.
+     */
     private void calculateRelativeHumanDirections() {
         relativeHumanDirections.put(Direction.NORTH, new HashMap<>());
         relativeHumanDirections.put(Direction.EAST, new HashMap<>());
@@ -166,18 +200,15 @@ public class PlayerAnalyzer {
         Bukkit.getLogger().info(action);
         firstLevelActions.add(action);
 
-        //TODO temp: print to all players
-//        for(Player p : Bukkit.getOnlinePlayers()) {
-//            p.sendMessage(action);
-//        }
-
         //TODO: pass data into genesis, so that genesis can understand data
     }
 
-    //sync update
+    /**
+     * Perform an update that involves methods necessary to run on the main thread.
+     */
     public void updateSync() {
         //possibly recalculate edges
-        //for methods that need raycasting
+        //for methods that need raycasting; only run every 200 milliseconds
         if(System.currentTimeMillis() - lastRaycastTime >= 200) {
             lastRaycastTime = System.currentTimeMillis();
 
@@ -187,71 +218,76 @@ public class PlayerAnalyzer {
             analyzeVisibleVictims(visibleBlocks);
         }
 
-        if (actionBarMessage != null) {
-            player.spigot().sendMessage(ChatMessageType.ACTION_BAR, actionBarMessage);
-        }
-
-        if(DEBUG_PRINT) {
-            if (bestPathFormat != null) {
-                Scoreboard scoreboard = Bukkit.getScoreboardManager().getNewScoreboard();
-
-                Objective objective = scoreboard.registerNewObjective("path", "dummy", "" + ChatColor.GREEN + ChatColor.BOLD + "Best Path:");
-
-                objective.setDisplaySlot(DisplaySlot.SIDEBAR);
-
-                for (int i = 0; i < (bestPathFormat.size() < 16 ? bestPathFormat.size() : 16); i++) {
-                    objective.getScore(bestPathFormat.get(i)).setScore(-(i + 1));
-                }
-
-                player.setScoreboard(scoreboard);
+        if(PRINT_RECOMMENDATIONS) {
+            if (actionBarMessage != null) {
+                player.spigot().sendMessage(ChatMessageType.ACTION_BAR, actionBarMessage);
             }
-        } else {
-            if (lastRecommendationMessage != null) {
-                //update direction if player looked a different way
-                analyzeNextBestMove(lastBestPath, null);
 
-                Scoreboard scoreboard = Bukkit.getScoreboardManager().getNewScoreboard();
+            if (DEBUG_VERBOSE_RECOMMENDATIONS) {
+                if (bestPathFormat != null) {
+                    Scoreboard scoreboard = Bukkit.getScoreboardManager().getNewScoreboard();
 
-                Objective objective = scoreboard.registerNewObjective("path", "dummy", "" + ChatColor.GREEN + ChatColor.BOLD + "Next Move:");
+                    Objective objective = scoreboard.registerNewObjective("path", "dummy", "" + ChatColor.GREEN + ChatColor.BOLD + "Best Path:");
 
-                objective.setDisplaySlot(DisplaySlot.SIDEBAR);
+                    objective.setDisplaySlot(DisplaySlot.SIDEBAR);
 
-                if(lastRecommendationMessage.length() > 32) {
-                    List<String> messages = new ArrayList<>();
+                    for (int i = 0; i < (bestPathFormat.size() < 16 ? bestPathFormat.size() : 16); i++) {
+                        objective.getScore(bestPathFormat.get(i)).setScore(-(i + 1));
+                    }
 
-                    String message = lastRecommendationMessage;
-                    while(message.length() > 32) {
-                        int bestIndex = 0;
-                        int index;
-                        String currentString = message;
-                        while((index = currentString.indexOf(" ")) != -1) {
-                            if(bestIndex + index > 32) {
-                                break;
+                    player.setScoreboard(scoreboard);
+                }
+            } else {
+                if (lastRecommendationMessage != null) {
+                    //update direction if player looked a different way
+                    analyzeNextBestMove(lastBestPath, null);
+
+                    Scoreboard scoreboard = Bukkit.getScoreboardManager().getNewScoreboard();
+
+                    Objective objective = scoreboard.registerNewObjective("path", "dummy", "" + ChatColor.GREEN + ChatColor.BOLD + "Next Move:");
+
+                    objective.setDisplaySlot(DisplaySlot.SIDEBAR);
+
+                    if (lastRecommendationMessage.length() > 32) {
+                        List<String> messages = new ArrayList<>();
+
+                        String message = lastRecommendationMessage;
+                        while (message.length() > 32) {
+                            int bestIndex = 0;
+                            int index;
+                            String currentString = message;
+                            while ((index = currentString.indexOf(" ")) != -1) {
+                                if (bestIndex + index > 32) {
+                                    break;
+                                }
+
+                                bestIndex += index + 1;
+                                currentString = currentString.substring(index + 1);
                             }
 
-                            bestIndex += index + 1;
-                            currentString = currentString.substring(index + 1);
+                            messages.add(message.substring(0, bestIndex));
+                            message = message.substring(bestIndex);
                         }
 
-                        messages.add(message.substring(0, bestIndex));
-                        message = message.substring(bestIndex);
+                        messages.add(message);
+
+                        for (int i = 0; i < messages.size(); i++) {
+                            objective.getScore(ChatColor.LIGHT_PURPLE + messages.get(i)).setScore(messages.size() - i - 1);
+                        }
+                    } else {
+                        objective.getScore(lastRecommendationMessage).setScore(0);
                     }
 
-                    messages.add(message);
-
-                    for(int i = 0; i < messages.size(); i++) {
-                        objective.getScore(ChatColor.LIGHT_PURPLE + messages.get(i)).setScore(messages.size() - i - 1);
-                    }
-                } else {
-                    objective.getScore(lastRecommendationMessage).setScore(0);
+                    player.setScoreboard(scoreboard);
                 }
-
-                player.setScoreboard(scoreboard);
             }
         }
     }
 
-    //async update
+    /**
+     * Run methods that do not need to be on the main thread to run. Prefer method calls here if possible, since it will not lag the main thread as much.
+     * @param lastStats
+     */
     public void update(EnhancedStatsTracker.LastStatsSnapshot lastStats) {
         if(lastLastStats == null || lastLastStats.lastPlayerValues == null) {
             lastLastStats = lastStats;
@@ -271,7 +307,7 @@ public class PlayerAnalyzer {
     }
 
     /**
-     * If a victim is seen and they are not yet saved, then we will add it to a list of seen victims to keep track of where victims are. This list is shared by all players, so any player can determine this
+     * If a victim is seen and they are not yet saved, then we will add it to a list of seen victims to keep track of where victims are. This list is shared by all players (stored in the MissionGraph representation), so any player can determine this.
      * @param visibleBlocks
      */
     private void analyzeVisibleVictims(Set<Block> visibleBlocks) {
@@ -313,7 +349,10 @@ public class PlayerAnalyzer {
         }
     }
 
-    //goal: use visibility algorithm to determine whether or not edges should be changed
+    /**
+     * This will run an algorithm that checks whether or not, from the blocks that the player can see, there exists a hole that connects two distinct rooms. If this is true, then we will create an edge in the graphical representation. Additionally, it will check whether or not edges should be removed if there is a blockage.
+     * @param visibleBlocks
+     */
     private void analyzeMissionGraphEdges(Set<Block> visibleBlocks) {
         HashMap<MissionRoom, Set<Block>> visibleBlocksByRoom = new HashMap<>();
 
@@ -364,7 +403,6 @@ public class PlayerAnalyzer {
 
                         if(originalBounds.collidesWith(compareBounds)) {
                             //then they possibly may have an edge
-//                            Bukkit.broadcastMessage("POSSIBLE EDGE BETWEEN ROOMS " + originalRoom.getRoomName() + " AND " + compareRoom.getRoomName());
 
                             int minX = Integer.MAX_VALUE;
                             int minZ = Integer.MAX_VALUE;
@@ -431,11 +469,10 @@ public class PlayerAnalyzer {
                                     continue;
                                 }
 
-                                //quality check; make sure the path is not simply the currently shortest path
                                 MissionGraph.LocationPath newPath = mission.getMissionGraph().defineEdge(MissionGraph.MissionVertexType.ROOM, originalRoom.getRoomName(), MissionGraph.MissionVertexType.ROOM, compareRoom.getRoomName());
                                 mission.getMissionGraph().protectEdge(MissionGraph.MissionVertexType.ROOM, originalRoom.getRoomName(), MissionGraph.MissionVertexType.ROOM, compareRoom.getRoomName());
 
-                                double manhattanDistance = 0;
+                                double manhattanDistance;
                                 MissionGraph.MissionVertex originalVertex = null, compareVertex = null;
                                 for(MissionGraph.MissionVertex vertex : mission.getMissionGraph().getRoomVertices()) {
                                     if(vertex.name.equals(originalRoom.getRoomName())) {
@@ -448,6 +485,7 @@ public class PlayerAnalyzer {
 
                                 manhattanDistance = originalVertex.location.distance(compareVertex.location);
 
+                                //quality check; make sure the path is not simply the currently shortest path and we are actually finding a new shorter path
                                 if(newPath.getPathLength() < manhattanDistance * 2d) {
                                     System.out.println("" + ChatColor.GOLD + ChatColor.BOLD + "FOUND EDGE BETWEEN ROOMS " + originalRoom.getRoomName() + " AND " + compareRoom.getRoomName() + " WITH LENGTH " + mission.getMissionGraph().getShortestPathUsingEdges(MissionGraph.MissionVertexType.ROOM, originalRoom.getRoomName(), MissionGraph.MissionVertexType.ROOM, compareRoom.getRoomName()).getPathLength());
 
@@ -468,21 +506,34 @@ public class PlayerAnalyzer {
 
         //check for disrupted edges due to blockages
         if(lastVertex != null) {
-            for(MissionGraph.MissionVertex neighbor : mission.getMissionGraph().getNeighbors(lastVertex)) {
-                Location loc;
-                if((loc = mission.getMissionGraph().verifyEdgeTraversable(lastVertex.type, lastVertex.name, neighbor.type, neighbor.name, visibleBlocks)) != null) {
-                    System.out.println("" + ChatColor.RED + ChatColor.BOLD + "THE EDGE BETWEEN " + lastVertex + " AND " + neighbor + " IS NOT TRAVERSABLE!");
-                    mission.getMissionGraph().deleteEdge(lastVertex.type, lastVertex.name, neighbor.type, neighbor.name);
-                    mission.getMissionGraph().getRemovedEdgeLocationMarkers().add(loc);
+            //checks for the neighbors of last vertex, then also checks for the neighbors of the neighbors of the lastvertex (2 layers of checking)
 
-                    shouldUpdatePlayerGraph = true;
-                    break;
+            Set<MissionGraph.MissionVertex> toCheckNeighbors = new HashSet<>();
+
+            toCheckNeighbors.add(lastVertex);
+
+            toCheckNeighbors.addAll(mission.getMissionGraph().getNeighbors(lastVertex));
+
+            for(MissionGraph.MissionVertex vertex : toCheckNeighbors) {
+                for (MissionGraph.MissionVertex neighbor : mission.getMissionGraph().getNeighbors(vertex)) {
+                    Location loc;
+                    if ((loc = mission.getMissionGraph().verifyEdgeTraversable(vertex.type, vertex.name, neighbor.type, neighbor.name, visibleBlocks)) != null) {
+                        System.out.println("" + ChatColor.RED + ChatColor.BOLD + "THE EDGE BETWEEN " + vertex + " AND " + neighbor + " IS NOT TRAVERSABLE!");
+                        mission.getMissionGraph().deleteEdge(vertex.type, vertex.name, neighbor.type, neighbor.name);
+                        mission.getMissionGraph().getRemovedEdgeLocationMarkers().add(loc);
+
+                        shouldUpdatePlayerGraph = true;
+                        break;
+                    }
                 }
             }
         }
     }
 
     @Deprecated
+    /**
+     * This method was originally created to weight rooms differently, but since it was difficult to find correlations in rooms, I discontinued creating it.
+     */
     private HashMap<MissionGraph.MissionVertex, Double> calculateRoomPotentials(MissionGraph.MissionVertex playerVertex) {
         HashMap<MissionGraph.MissionVertex, Double> roomPotentials = new HashMap<>();
 
@@ -572,11 +623,16 @@ public class PlayerAnalyzer {
         return calculateBestPath(startingVertex, true);
     }
 
-//    private List<MissionGraph.MissionVertex> calculateBestPath(MissionGraph.MissionVertex playerVertex, HashMap<MissionGraph.MissionVertex, Double> roomPotentials) {
+    /**
+     * Main method that calculates the player's best path from where they currently are using a series of calculations. A more verbose description of this implementation can be found on the Github project.
+     * @param startingVertex Player's vertex, or the vertex that the best path begins.
+     * @param onlyNonVisitedRooms Whether or not to consider rooms that have been visited. If true, only considers unvisited rooms. If false, only considers rooms that have been visited but still have victims inside. If false, will also not update the actionBarMessage.
+     * @return
+     */
     private List<MissionGraph.MissionVertex> calculateBestPath(MissionGraph.MissionVertex startingVertex, boolean onlyNonVisitedRooms) {
         MissionGraph graph = mission.getMissionGraph().cloneGraphOnly();
 
-        //modify weights to accomodate for potential; this will allow for graph path to be weighted based on specific factors
+        //DEPRECATED: modify weights to accomodate for potential; this will allow for graph path to be weighted based on specific factors
 //        for(MissionGraph.MissionVertex roomPotential : roomPotentials.keySet()) {
 //            for(MissionGraph.MissionVertex neighbor : graph.getNeighbors(roomPotential)) {
 //                graph.modifyEdgeWeight(roomPotential, neighbor, graph.getEdgeWeight(roomPotential, neighbor) + Math.pow((1 - roomPotentials.get(roomPotential)) * roomPotentialWeight, 2));
@@ -588,8 +644,10 @@ public class PlayerAnalyzer {
         //first, calculate the path from any room to another room using APSP weight algorithm AND player's node if it is not a room node
         //store room to decision nodes mapping
 
+        //TODO: an optimization that can be made is to only run the APSP algorithm everytime an edge is removed/added, and otherwise reference a static copy of the APSP.
+
+        //represents the rooms that will be considered in this best path
         List<MissionGraph.MissionVertex> nodeCandidates = new ArrayList<>();
-        HashMap<MissionGraph.MissionVertex, HashMap<MissionGraph.MissionVertex, MissionGraph.VertexPath>> roomPaths = new HashMap<>();
 
         //first, we check if any rooms have not been visited
         if(onlyNonVisitedRooms) {
@@ -606,10 +664,13 @@ public class PlayerAnalyzer {
             }
         }
 
+        //if the player's current node is a decision node, then we will add it to be the first node.
         if(!nodeCandidates.contains(startingVertex)) {
             nodeCandidates.add(startingVertex);
         }
 
+        //calculate path from one node to all other nodes (APSP)
+        HashMap<MissionGraph.MissionVertex, HashMap<MissionGraph.MissionVertex, MissionGraph.VertexPath>> roomPaths = new HashMap<>();
         for(MissionGraph.MissionVertex beginNode : nodeCandidates) {
             roomPaths.put(beginNode, graph.getShortestPathToAllVertices(beginNode.type, beginNode.name));
         }
@@ -630,8 +691,10 @@ public class PlayerAnalyzer {
         }
 
         //now, iteratively find the next best room from any current room (starting at player's node)
+        //this will run a greedy algorithm that finds the next shortest distance from a node, then repeat
         MissionGraph.MissionVertex currentVertex = roomPath.get(roomPath.size() - 1);
 
+        //cap at 30 rooms; performance doesn't seem to be an issue for this algorithm, however.
         for(int i = 0; i < 30; i++) {
             MissionGraph.MissionVertex minVertexExplored = null;
             MissionGraph.MissionVertex minVertexUnexplored = null;
@@ -705,11 +768,12 @@ public class PlayerAnalyzer {
             vertex.playerReferenceLocation = closestLocation;
         }
 
-        if(PRINT) {
+        //print estimated time left for player based on best path; is RED if the system doesn't think their current trajectory can get to all rooms on time
+        if(onlyNonVisitedRooms && PRINT_RECOMMENDATIONS) {
             double timeToFinish = calculatePlayerTimeToFinish(reconstructedPath, totalPathLength);
             String timeToFinishMsg;
 
-            double secondsLeft = ((Math.round((calculatePlayerTimeToFinish(reconstructedPath, totalPathLength) / 1000d) * 100d) / 100d));
+            double secondsLeft = ((Math.round((timeToFinish / 1000d) * 100d) / 100d));
 
             ChatColor timeToFinishColor;
             //if the player does not have enough time to complete the path, the color is red
@@ -725,7 +789,7 @@ public class PlayerAnalyzer {
                 timeToFinishMsg = timeToFinishColor + "EST. TIME LEFT: ...";
             }
 
-            if(DEBUG_PRINT) {
+            if(DEBUG_VERBOSE_RECOMMENDATIONS) {
                 actionBarMessage = new TextComponent(ChatColor.GREEN + "PATH LENGTH: " + ((Math.round(totalPathLength * 100d) / 100d)) + " BLOCKS" + ChatColor.WHITE + ChatColor.BOLD + " | " + timeToFinishMsg);
             } else {
                 actionBarMessage = new TextComponent(timeToFinishMsg);
@@ -735,7 +799,13 @@ public class PlayerAnalyzer {
         return reconstructedPath;
     }
 
-    //consider leaf branching situation, multiple shortest paths
+    /**
+     * Limited-horizon shortest path algorithm that creates multiple "leaves" of possible paths and then after a certain amount of leaves, it will pick the overall shortest path. Complexity is 2^x for the number of layers done, which is why this is only done limited.
+     * @param nodeCandidates
+     * @param roomPaths
+     * @param firstVertex
+     * @return
+     */
     private List<MissionGraph.MissionVertex> calculateBestLongTermPath(List<MissionGraph.MissionVertex> nodeCandidates, HashMap<MissionGraph.MissionVertex, HashMap<MissionGraph.MissionVertex, MissionGraph.VertexPath>> roomPaths, MissionGraph.MissionVertex firstVertex) {
         HashMap<List<MissionGraph.MissionVertex>, Double> currentPaths = new HashMap<>();
         HashMap<List<MissionGraph.MissionVertex>, Set<MissionGraph.MissionVertex>> visitedVertices = new HashMap<>();
@@ -744,32 +814,32 @@ public class PlayerAnalyzer {
         currentPaths.put(firstPath, 0d);
         visitedVertices.put(firstPath, new HashSet<>(firstPath));
 
+        //wrapper used so that the priority queue can access the currently looked at path and create comparisons based on this
         List<MissionGraph.MissionVertex>[] currentPath = new List[] {firstPath};
 
-        PriorityQueue<MissionGraph.MissionVertex> minVertices = new PriorityQueue<>(new Comparator<MissionGraph.MissionVertex>() {
-            @Override
-            public int compare(MissionGraph.MissionVertex o1, MissionGraph.MissionVertex o2) {
-                if(visitedVertices.get(currentPath[0]).contains(o1)) {
-                    return 1;
+        //if any vertex has been visited, prioritize it last. Otherwise, priority is the vertex with the shorter length from the current vertex
+        PriorityQueue<MissionGraph.MissionVertex> minVertices = new PriorityQueue<>((o1, o2) -> {
+            if(visitedVertices.get(currentPath[0]).contains(o1)) {
+                return 1;
+            } else {
+                if(visitedVertices.get(currentPath[0]).contains(o2)) {
+                    return -1;
                 } else {
-                    if(visitedVertices.get(currentPath[0]).contains(o2)) {
+                    //get the most recent vertex in the current path
+                    MissionGraph.MissionVertex currentVertex = currentPath[0].get(currentPath[0].size() - 1);
+
+                    if(currentVertex == o1) {
+                        return 1;
+                    } else if(currentVertex == o2) {
                         return -1;
-                    } else {
-                        MissionGraph.MissionVertex currentVertex = currentPath[0].get(currentPath[0].size() - 1);
-
-                        if(currentVertex == o1) {
-                            return 1;
-                        } else if(currentVertex == o2) {
-                            return -1;
-                        }
-
-                        return Double.compare(roomPaths.get(currentVertex).get(o1).getPathLength(), roomPaths.get(currentVertex).get(o2).getPathLength());
                     }
+
+                    return Double.compare(roomPaths.get(currentVertex).get(o1).getPathLength(), roomPaths.get(currentVertex).get(o2).getPathLength());
                 }
             }
         });
 
-        //traverse through 5 layers of multiple decisions
+        //traverse through 5 layers of multiple decisions (2^5)
         for(int i = 0; i < 5; i++) {
             Set<List<MissionGraph.MissionVertex>> clonedKeySet = new HashSet<>(currentPaths.keySet());
             for(List<MissionGraph.MissionVertex> path : clonedKeySet) {
@@ -800,27 +870,9 @@ public class PlayerAnalyzer {
                     }
                 }
 
-                //don't reuse this path
+                //don't reuse this path, so remove it
                 currentPaths.remove(path);
             }
-
-            //print out possible paths
-
-//            Bukkit.broadcastMessage(ChatColor.BOLD + "END OF ITERATION " + i);
-//            Bukkit.broadcastMessage(ChatColor.LIGHT_PURPLE + "PATHS: " + currentPaths.size());
-//
-//            List<List<MissionGraph.MissionVertex>> pathsSorted = new ArrayList<>(currentPaths.keySet());
-//
-//            pathsSorted.sort(new Comparator<List<MissionGraph.MissionVertex>>() {
-//                @Override
-//                public int compare(List<MissionGraph.MissionVertex> o1, List<MissionGraph.MissionVertex> o2) {
-//                    return Double.compare(currentPaths.get(o1), currentPaths.get(o2));
-//                }
-//            });
-//
-//            for(List<MissionGraph.MissionVertex> pathLoop : pathsSorted) {
-//                Bukkit.broadcastMessage(pathLoop.toString() + " " + ChatColor.YELLOW + currentPaths.get(pathLoop));
-//            }
         }
 
         //get the shortest path out of all traversed
@@ -833,12 +885,15 @@ public class PlayerAnalyzer {
             }
         }
 
-//        Bukkit.broadcastMessage(ChatColor.GOLD + "SHORTEST PATH: " + currentPaths.get(shortestPath) + " " + shortestPath);
-
         return shortestPath;
     }
 
-    //returns in milliseconds
+    /**
+     * Calculates time to get to all rooms based on current player speeds and total distance to remaining rooms on best path
+     * @param bestPath
+     * @param totalPathLength
+     * @return In milliseconds, estimated time to traverse all rooms
+     */
     private double calculatePlayerTimeToFinish(List<MissionGraph.MissionVertex> bestPath, double totalPathLength) {
         if(averagePlayerRoomTriageSpeed == 0 || averagePlayerDecisionTraversalSpeed == 0) {
             return -1;
@@ -855,9 +910,11 @@ public class PlayerAnalyzer {
         return time;
     }
 
+    /**
+     * Runs the best path algorithm, updates the player's current vertex, and formats recommendations to show the player
+     * @param lastStats
+     */
     private void analyzeMissionGraph(EnhancedStatsTracker.LastStatsSnapshot lastStats) {
-        MissionGraph graph = mission.getMissionGraph();
-
         //calculate the current player node, checking rooms first
         MissionGraph.MissionVertex playerVertex = null;
         for(MissionRoom room : mission.getRooms()) {
@@ -866,12 +923,16 @@ public class PlayerAnalyzer {
             }
         }
 
-        //if not in a room, check for decision nodes nearby
+        //if not in a room, check for decision nodes nearby up to 3 blocks away
         if(playerVertex == null) {
+            double minDistance = Double.MAX_VALUE;
             for(Map.Entry<String, Location> entry : mission.getDecisionPoints().entrySet()) {
-                if(player.getLocation().distanceSquared(entry.getValue()) <= 4) {
-                    playerVertex = new MissionGraph.MissionVertex(MissionGraph.MissionVertexType.DECISION, null, entry.getKey());
-                    break;
+                double distance;
+                if((distance = player.getLocation().distanceSquared(entry.getValue())) <= 9) {
+                    if(distance < minDistance) {
+                        minDistance = distance;
+                        playerVertex = new MissionGraph.MissionVertex(MissionGraph.MissionVertexType.DECISION, null, entry.getKey());
+                    }
                 }
             }
         }
@@ -887,14 +948,12 @@ public class PlayerAnalyzer {
                     }
                 }
 
-                //best path
-
 //                HashMap<MissionGraph.MissionVertex, Double> roomPotentials = calculateRoomPotentials(playerVertex);
                 List<MissionGraph.MissionVertex> bestPath = calculateBestPath(playerVertex);
 
                 //append that with the best path of visited rooms
                 if(!bestPath.isEmpty()) {
-                    bestPath.addAll(calculateBestPath(bestPath.get(bestPath.size() - 1), true));
+                    bestPath.addAll(calculateBestPath(bestPath.get(bestPath.size() - 1), false));
                 }
 
                 lastBestPath = bestPath;
@@ -926,15 +985,13 @@ public class PlayerAnalyzer {
                         visitedVerticesCount.put(vertex.toString(), visitedVerticesCount.get(vertex.toString()) + 1);
                         bestPathFormat.add(color + vertex.toString() + " (" + visitedVerticesCount.get(vertex.toString()) + ")");
                     }
-
                 }
 
-                if(PRINT) {
+                if(PRINT_RECOMMENDATIONS) {
                     analyzeNextBestMove(bestPath, lastStats);
                 }
 
                 //analyze player speed
-//                Bukkit.broadcastMessage("CURRENT NODE: " + playerVertex);
                 calculatePlayerSpeed(mission.getMissionGraph(), lastVertex, playerVertex);
 
 //                Bukkit.broadcastMessage(ChatColor.YELLOW + "AVERAGE HALLWAY SPEED: " + (averagePlayerDecisionTraversalSpeed * 1000) + " blocks/sec");
@@ -944,36 +1001,15 @@ public class PlayerAnalyzer {
                 visitedVertices.add(playerVertex);
                 unvisitedRooms.remove(playerVertex);
                 lastVertex = playerVertex;
-
-//                player.sendMessage("Your current node is " + ChatColor.DARK_PURPLE + playerVertex.type + ": " + playerVertex.name);
-
-                Set<MissionGraph.MissionVertex> neighbors = graph.getNeighbors(playerVertex);
-                if(neighbors.size() == 1) {
-//                    player.sendMessage("  You will go here next: " + ChatColor.GOLD + neighbors);
-                } else {
-                    List<MissionGraph.MissionVertex> likelyNeighbors = new ArrayList<>();
-                    List<MissionGraph.MissionVertex> unlikelyNeighbors = new ArrayList<>();
-
-                    for(MissionGraph.MissionVertex vertex : neighbors) {
-                        if(visitedVertices.contains(vertex)) {
-                            unlikelyNeighbors.add(vertex);
-                        } else {
-                            if(vertex.type == MissionGraph.MissionVertexType.ROOM) {
-                                likelyNeighbors.add(0, vertex);
-                            } else {
-                                likelyNeighbors.add(vertex);
-                            }
-                        }
-                    }
-
-//                    player.sendMessage("  You will probably go here next: " + ChatColor.YELLOW + likelyNeighbors);
-//                    player.sendMessage("  You might go here next: " + ChatColor.GRAY + unlikelyNeighbors);
-                }
             }
         }
     }
 
-    //goal: using the best path and player location, determine in EASILY HUMAN READABLE FORMAT the next best move
+    /**
+     * Based on the best path calculated and the player's location, format a human readable relative direction recommendation on where to move next
+     * @param bestPath
+     * @param lastStats
+     */
     private void analyzeNextBestMove(List<MissionGraph.MissionVertex> bestPath, EnhancedStatsTracker.LastStatsSnapshot lastStats) {
         //simplified first-time analysis: at decision nodes, output if the player should enter a room connected, and if so, output where it is relative to the player
         Direction playerDir = getDirection(player.getLocation());
@@ -1017,12 +1053,17 @@ public class PlayerAnalyzer {
                 }
             }
 
-            if(DEBUG_PRINT) {
+            if(DEBUG_VERBOSE_RECOMMENDATIONS) {
                 Bukkit.broadcastMessage(lastRecommendationMessage);
             }
         }
     }
 
+    /**
+     * Convert a location's YAW to a direction (N E S W)
+     * @param loc
+     * @return
+     */
     private Direction getDirection(Location loc) {
         Direction dir;
         double yaw = loc.getYaw();
@@ -1044,6 +1085,12 @@ public class PlayerAnalyzer {
         return dir;
     }
 
+    /**
+     * Calculate the player's speed based on the time they take to triage in a room and the time they take to move in the hallways
+     * @param graph
+     * @param lastVertex
+     * @param currentVertex
+     */
     private void calculatePlayerSpeed(MissionGraph graph, MissionGraph.MissionVertex lastVertex, MissionGraph.MissionVertex currentVertex) {
         if(lastVertex == null) {
             return;
@@ -1066,14 +1113,14 @@ public class PlayerAnalyzer {
         } else {
             if(lastDecisionEnterTime == -1) {
                 lastDecisionEnterTime = System.currentTimeMillis();
-            } else if(lastVertex != null) {
+            } else {
                 //decision to decision node
                 playerDecisionSpeeds.add(new DecisionTraversal(graph, lastVertex, currentVertex, System.currentTimeMillis() - lastDecisionEnterTime));
                 lastDecisionEnterTime = System.currentTimeMillis();
                 recalculateDecisionTraversalAverage();
             }
 
-            if(lastVertex != null && lastVertex.type == MissionGraph.MissionVertexType.ROOM) {
+            if(lastVertex.type == MissionGraph.MissionVertexType.ROOM) {
                 if(!playerRoomTriageSpeeds.containsKey(lastVertex)) {
                     //just exited a room
                     playerRoomTriageSpeeds.put(lastVertex, System.currentTimeMillis() - lastRoomEnterTime);
@@ -1085,9 +1132,11 @@ public class PlayerAnalyzer {
         }
     }
 
+    /**
+     * Recalculates time it takes to triage rooms on average. Uses room area as a rough estimate for time it takes to triage rooms (bigger rooms => more time to triage)
+     */
     private void recalculateRoomTriageAverage() {
-//        Bukkit.broadcastMessage("ROOM TRIAGE " + playerRoomTriageSpeeds.get(playerRoomTriageSpeeds.size() - 1));
-        averagePlayerRoomTriageSpeed = 0;
+        averagePlayerRoomTriageSpeed = 0d;
         int totalArea = 0;
         for(MissionGraph.MissionVertex room : playerRoomTriageSpeeds.keySet()) {
             averagePlayerRoomTriageSpeed += playerRoomTriageSpeeds.get(room);
@@ -1097,9 +1146,11 @@ public class PlayerAnalyzer {
         averagePlayerRoomTriageSpeed = averagePlayerRoomTriageSpeed / totalArea;
     }
 
+    /**
+     * Recalculates time it takes to move between decision points in the hallway.
+     */
     private void recalculateDecisionTraversalAverage() {
-//        Bukkit.broadcastMessage("DECISION TRAVERSAL " + playerDecisionSpeeds.get(playerDecisionSpeeds.size() - 1).pathTime);
-        averagePlayerDecisionTraversalSpeed = 0;
+        averagePlayerDecisionTraversalSpeed = 0d;
         long totalTime = 0;
         for(DecisionTraversal traversal : playerDecisionSpeeds) {
             averagePlayerDecisionTraversalSpeed += traversal.pathLength;
@@ -1109,6 +1160,10 @@ public class PlayerAnalyzer {
         averagePlayerDecisionTraversalSpeed /= totalTime;
     }
 
+    /**
+     * Determine, based on LineOfSight stats, whether or not player is looking at a victim. Will log when the player looks at them, looks away from them. Victim number represents the victim count that they have directly looked at so far. Does not use the blocks raycasting algorithm to see victims; only will log if the player DIRECTLY looks at the victim.
+     * @param lastStats
+     */
     private void analyzeVictimTarget(EnhancedStatsTracker.LastStatsSnapshot lastStats) {
         if(lastStats.lastPlayerValues.get("LineOfSight") instanceof String && ((String) lastStats.lastPlayerValues.get("LineOfSight")).isEmpty()) {
             currentVictimTarget = null;
@@ -1153,6 +1208,11 @@ public class PlayerAnalyzer {
         }
     }
 
+    /**
+     * Uses the stats to determine when a player breaks a block that is a victim. If so, we will log this as saving the victim and remove it from the MissionGraph stored list of yet to be saved victims.
+     * @param lastStats
+     * @param deltaStats
+     */
     private void analyzeBrokenBlocks(EnhancedStatsTracker.LastStatsSnapshot lastStats, EnhancedStatsTracker.LastStatsSnapshot deltaStats) {
         boolean savedVictim = false;
         for(Material victimMat : VICTIM_BLOCKS) {
@@ -1191,6 +1251,10 @@ public class PlayerAnalyzer {
         }
     }
 
+    /**
+     * Determine when player enters and exits rooms based on room boundaries.
+     * @param lastStats
+     */
     private void analyzeRoom(EnhancedStatsTracker.LastStatsSnapshot lastStats) {
         Location location = new Location(player.getWorld(), (double) lastStats.lastPlayerValues.get("XPos"), 0, (double) lastStats.lastPlayerValues.get("ZPos"));
 
@@ -1221,6 +1285,10 @@ public class PlayerAnalyzer {
         }
     }
 
+    /**
+     * Determine when a player opens a door or extinguishes a fire.
+     * @param deltaStats
+     */
     private void analyzeClickedBlocks(EnhancedStatsTracker.LastStatsSnapshot deltaStats) {
         if(deltaStats.lastPlayerDoorsOpened != 0) {
             log(player.getName() + " opened a door.");
@@ -1236,12 +1304,16 @@ public class PlayerAnalyzer {
 
     /**
      *
-     * @return The last vertex that the player has been on. Can be null!
+     * @return The last vertex that the player has been on. Can be null (they have not yet entered a vertex)!
      */
     public MissionGraph.MissionVertex getLastVertex() {
         return lastVertex;
     }
 
+    /**
+     *
+     * @return Last calculated best path for player to go through all rooms. Can be null if they have not yet entered a vertex.
+     */
     public List<MissionGraph.MissionVertex> getLastBestPath() {
         return lastBestPath;
     }

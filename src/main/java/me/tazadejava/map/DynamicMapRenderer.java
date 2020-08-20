@@ -19,9 +19,12 @@ import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
-import java.io.*;
-import java.util.*;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.util.List;
+import java.util.*;
 
 public class DynamicMapRenderer extends MapRenderer {
 
@@ -34,6 +37,7 @@ public class DynamicMapRenderer extends MapRenderer {
     private Player player;
 
     private boolean showRoomAndDecisionLabels;
+    private boolean showBestPathAndVictims;
 
     private PlayerAnalyzer analyzer;
     private Mission mission;
@@ -48,11 +52,12 @@ public class DynamicMapRenderer extends MapRenderer {
     //variables used only if not using the answer map
     private String[][] mapping;
 
-    private DynamicMapRenderer(JavaPlugin plugin, MissionManager missionManager, Player player, boolean showRoomAndDecisionLabels, CustomMap map) {
+    private DynamicMapRenderer(JavaPlugin plugin, MissionManager missionManager, Player player, boolean showRoomAndDecisionLabels, boolean showBestPathAndVictims, CustomMap map) {
         this.plugin = plugin;
         this.manager = missionManager;
         this.player = player;
         this.showRoomAndDecisionLabels = showRoomAndDecisionLabels;
+        this.showBestPathAndVictims = showBestPathAndVictims;
 
         switch(map) {
             case SPARKY:
@@ -226,13 +231,13 @@ public class DynamicMapRenderer extends MapRenderer {
 //        mapImage = getScaledImage(128, 128, originalImage);
 //    }
 
-    public static ItemStack getMap(JavaPlugin plugin, MissionManager missionManager, Player player, boolean showRoomAndDecisionLabels, CustomMap mapType) {
+    public static ItemStack getMap(JavaPlugin plugin, MissionManager missionManager, Player player, boolean showRoomAndDecisionLabels, boolean showBestPathAndVictims, CustomMap mapType) {
         MapView map = Bukkit.createMap(Bukkit.getWorlds().get(0));
         map.getRenderers().clear();
         map.setLocked(true);
         map.setUnlimitedTracking(false);
         map.setScale(MapView.Scale.NORMAL);
-        map.addRenderer(new DynamicMapRenderer(plugin, missionManager, player, showRoomAndDecisionLabels, mapType));
+        map.addRenderer(new DynamicMapRenderer(plugin, missionManager, player, showRoomAndDecisionLabels, showBestPathAndVictims, mapType));
 
         ItemStack mapItem = new ItemStack(Material.FILLED_MAP);
         MapMeta meta = (MapMeta) mapItem.getItemMeta();
@@ -265,14 +270,14 @@ public class DynamicMapRenderer extends MapRenderer {
 
         int pointerZTranslation = 64;
         MapCursorCollection cursors = new MapCursorCollection();
-        canvas.drawImage(0, 0, rotateImage(mapImage, angle, playerScaleX, playerScaleZ, pointerZTranslation));
+        canvas.drawImage(0, 0, getTranslatedRotatedImage(mapImage, angle, playerScaleX, playerScaleZ, pointerZTranslation));
 
         cursors.addCursor(new MapCursor((byte) 0, (byte) pointerZTranslation, (byte) 8, MapCursor.Type.RED_POINTER, true));
 
         canvas.setCursors(cursors);
     }
 
-    private BufferedImage rotateImage(BufferedImage image, int angle, double xScale, double zScale, int pointerZTranslation) {
+    private BufferedImage getTranslatedRotatedImage(BufferedImage image, int angle, double xScale, double zScale, int pointerZTranslation) {
         int width = image.getWidth();
         int height = image.getHeight();
 
@@ -284,7 +289,7 @@ public class DynamicMapRenderer extends MapRenderer {
 
         graphics.translate(width, height);
 
-        int xDelta = (int) (-xScale * width) +  (width / 2);
+        int xDelta = (int) (-xScale * width) + (width / 2);
         int zDelta = (int) (-zScale * height) + (height / 2) + (int) (((pointerZTranslation) / 255d) * height);
         graphics.drawImage(image, null, xDelta, zDelta);
 
@@ -298,7 +303,7 @@ public class DynamicMapRenderer extends MapRenderer {
 
         graphics = rotated.createGraphics();
 
-        graphics.rotate(Math.toRadians(angle), rotated.getWidth() / 2, rotated.getHeight() / 2 + ((int) (((pointerZTranslation) / 255d) * rotated.getHeight())));
+        graphics.rotate(Math.toRadians(angle), rotated.getWidth() / 2f, rotated.getHeight() / 2f + ((int) (((pointerZTranslation) / 255d) * rotated.getHeight())));
         graphics.drawImage(translated, null, -width, -height);
 
         graphics.dispose();
@@ -326,48 +331,50 @@ public class DynamicMapRenderer extends MapRenderer {
         }
 
         //draw rooms with victims in them that the player missed!
-        drawLeftVictimRooms(graphics, mapOffsetX, mapOffsetZ, width, height);
+        if(showBestPathAndVictims) {
+            drawLeftVictimRooms(graphics, mapOffsetX, mapOffsetZ, width, height);
 
-        //draw added and removed edges
-        drawAddedRemovedEdges(graphics, mapOffsetX, mapOffsetZ, width, height);
+            //draw added and removed edges
+            drawAddedRemovedEdges(graphics, mapOffsetX, mapOffsetZ, width, height);
 
-        List<MissionGraph.MissionVertex> bestPath = analyzer.getLastBestPath();
+            List<MissionGraph.MissionVertex> bestPath = analyzer.getLastBestPath();
 
-        if(bestPath == null) {
-            return;
-        }
-
-        int iconSize, colorIntensity;
-
-        int pathSize = Math.min(bestPath.size(), 7);
-
-        MissionGraph graph = mission.getMissionGraph();
-
-        for(int i = 1; i < pathSize; i++) {
-            MissionGraph.MissionVertex nextVertex = bestPath.get(i);
-
-            colorIntensity = (int) (255 * Math.pow(((double) (pathSize - i) / (pathSize)), 2));
-            iconSize = (int) (5 * ((double) (pathSize - i) / (pathSize))) + 3;
-
-            int x = mapOffsetX + (int) (width * getScale(xRange, nextVertex.location.getBlockX()));
-            int z = mapOffsetZ + (int) (height * getScale(zRange, nextVertex.location.getBlockZ()));
-
-            //draw edge path
-            if(i < pathSize - 1) {
-                graphics.setColor(new Color(colorIntensity, 0, colorIntensity));
-                LinkedList<Location> edgePath = graph.getExactPathBetweenEdges(bestPath.get(i).type, bestPath.get(i).name, bestPath.get(i + 1).type, bestPath.get(i + 1).name);
-                if(edgePath != null) {
-                    for (Location loc : edgePath) {
-                        int locX = mapOffsetX + (int) (width * getScale(xRange, loc.getBlockX()));
-                        int locZ = mapOffsetZ + (int) (height * getScale(zRange, loc.getBlockZ()));
-                        graphics.drawRect(locX, locZ, 1, 1);
-                    }
-                }
+            if (bestPath == null) {
+                return;
             }
 
-            //draw destination node
-            graphics.setColor(new Color(0, colorIntensity, 0));
-            graphics.fillOval(x - (iconSize / 2), z - (iconSize / 2), iconSize, iconSize);
+            int iconSize, colorIntensity;
+
+            int pathSize = Math.min(bestPath.size(), 7);
+
+            MissionGraph graph = mission.getMissionGraph();
+
+            for (int i = 1; i < pathSize; i++) {
+                MissionGraph.MissionVertex nextVertex = bestPath.get(i);
+
+                colorIntensity = (int) (255 * Math.pow(((double) (pathSize - i) / (pathSize)), 2));
+                iconSize = (int) (5 * ((double) (pathSize - i) / (pathSize))) + 3;
+
+                int x = mapOffsetX + (int) (width * getScale(xRange, nextVertex.location.getBlockX()));
+                int z = mapOffsetZ + (int) (height * getScale(zRange, nextVertex.location.getBlockZ()));
+
+                //draw edge path
+                if (i < pathSize - 1) {
+                    graphics.setColor(new Color(colorIntensity, 0, colorIntensity));
+                    LinkedList<Location> edgePath = graph.getExactPathBetweenEdges(bestPath.get(i).type, bestPath.get(i).name, bestPath.get(i + 1).type, bestPath.get(i + 1).name);
+                    if (edgePath != null) {
+                        for (Location loc : edgePath) {
+                            int locX = mapOffsetX + (int) (width * getScale(xRange, loc.getBlockX()));
+                            int locZ = mapOffsetZ + (int) (height * getScale(zRange, loc.getBlockZ()));
+                            graphics.drawRect(locX, locZ, 1, 1);
+                        }
+                    }
+                }
+
+                //draw destination node
+                graphics.setColor(new Color(0, colorIntensity, 0));
+                graphics.fillOval(x - (iconSize / 2), z - (iconSize / 2), iconSize, iconSize);
+            }
         }
     }
 

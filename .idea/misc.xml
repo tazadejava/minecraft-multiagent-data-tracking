@@ -6,6 +6,8 @@
   </component>
   <component name="JavadocGenerationManager">
     <option name="OUTPUT_DIRECTORY" value="$PROJECT_DIR$/javadocs" />
+    <option name="OPTION_SCOPE" value="private" />
+    <option name="OTHER_OPTIONS" value="-overview /home/yoshi/Documents/GenesisUROP/ActionTrackerPlugin/src/main/javadoc/overview.html" />
   </component>
   <component name="MavenProjectsManager">
     <option name="originalFiles">
