@@ -37,7 +37,7 @@ Note that along with the documentation below, the project itself has a detailed 
 
 # Setting up server to test recommendation system locally
 
-**The server files can be downloaded here:** [Link]()
+**The server files can be downloaded here:** [Link](https://github.com/tazadejava/minecraft-multiagent-data-tracking/raw/master/DataTrackingTestServer.zip)
 
 The server is configured to work on Minecraft version 1.16.1, but it should be able to work on newer/older versions of Minecraft given that the plugin's Maven libraries are updated, the plugin is repackaged, and the Paper version that runs the server is updated to the desired version.
 
